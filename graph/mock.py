@@ -64,8 +64,20 @@ def detail(name):
 
 
 def relations(name):
-    rows = [r for r in RELATIONS if r["source"] == name or r["target"] == name]
-    return rows
+    """人物的一跳关系。字段与真实接口保持一致（label / value），
+    否则占位模式与接库模式的返回结构不同，前端和冒烟脚本会被骗过。"""
+    return [
+        {
+            "source": r["source"],
+            "target": r["target"],
+            "label": r["type"],
+            "value": r["weight"],
+            "evidence": r.get("evidence", ""),
+            "confidence": r.get("confidence", 1.0),
+        }
+        for r in RELATIONS
+        if name in (r["source"], r["target"])
+    ]
 
 
 def subgraph(name, depth=1, types=None):
@@ -83,7 +95,7 @@ def subgraph(name, depth=1, types=None):
         next_frontier = []
         for current in frontier:
             for rel in relations(current):
-                if keep_types and rel["type"] not in keep_types:
+                if keep_types and rel["label"] not in keep_types:
                     continue
                 other_name = rel["target"] if rel["source"] == current else rel["source"]
                 other = _find(other_name)
@@ -95,8 +107,8 @@ def subgraph(name, depth=1, types=None):
                 links.append({
                     "source": rel["source"],
                     "target": rel["target"],
-                    "label": rel["type"],
-                    "value": rel["weight"],
+                    "label": rel["label"],
+                    "value": rel["value"],
                 })
         frontier = next_frontier
         if not frontier:

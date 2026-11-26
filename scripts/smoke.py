@@ -65,6 +65,29 @@ def person_graph():
     assert isinstance(data["nodes"], list) and isinstance(data["links"], list), "出图结构不合法"
 
 
+@check("人物关系接口", "P3")
+def person_relations():
+    data = assert_envelope(get_json("/api/persons/刘备/relations"), "items")
+    items = data["items"]
+    assert isinstance(items, list) and items, "关系列表为空"
+    first = items[0]
+    for key in ("source", "target", "label", "value"):
+        assert key in first, f"关系项缺少字段 {key}"
+    assert first["value"] >= 1, f"权重异常：{first['value']}"
+
+
+@check("事件列表接口", "P2")
+def list_events():
+    data = assert_envelope(get_json("/api/events", year_from=184, year_to=280), "items", "total")
+    assert isinstance(data["items"], list) and data["items"], "事件列表为空"
+
+
+@check("人物时间线接口", "P2")
+def person_timeline():
+    data = assert_envelope(get_json("/api/timeline/刘备"), "items")
+    assert isinstance(data["items"], list), "时间线不是列表"
+
+
 @check("最短路接口", "P4")
 def shortest_path():
     assert_envelope(get_json("/api/path", **{"from": "刘备", "to": "曹操"}), "nodes")

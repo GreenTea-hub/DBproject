@@ -53,7 +53,7 @@
         <p><strong>别名</strong>：${esc((p.aliases || []).join('、')) || '—'}</p>
         <p><strong>阵营 / 身份</strong>：${esc(p.faction || '—')} / ${esc(p.role || '—')}</p>
         <p><strong>生卒</strong>：${esc(p.birth_year ?? '—')} — ${esc(p.death_year ?? '—')}</p>
-        <p class="muted">关系数 ${esc(p.relation_count ?? 0)} · 出现回目 ${esc(p.chapter_count ?? 0)} 次</p>`;
+        <p class="muted">关系数 ${esc(p.relation_count ?? 0)} · 出场 ${esc(p.chapter_count ?? 0)} 回</p>`;
     } catch (err) {
       document.getElementById('profile').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     }
