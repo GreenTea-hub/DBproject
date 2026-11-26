@@ -18,11 +18,12 @@
 
 ```
 data/raw/sanguo_full.txt
-  → python scripts/split_chapters.py      # 切 120 回，产出 data/raw/chapters/
-  → python scripts/extract_mentions.py    # 统计共现，产出 data/build/cooccurrence.csv
+  → python scripts/split_chapters.py      # 切 120 回，产出 data/raw/chapters/ 与 data/build/chapters.csv
+  → python scripts/extract_mentions.py    # 产 data/build/cooccurrence.csv（配对）与 mentions.csv（每回每人次数）
   → 人工标注 relations.csv / events.csv
   → python scripts/extract_mentions.py --validate     # 格式质检
   → python scripts/check_data_quality.py              # 证据回原文核对
+  → python scripts/import_graph.py                    # P2 入库，导入后自动对账
 ```
 
 ## 2. 列定义（第 9 周定死，改动需走 7.5 节契约变更流程）

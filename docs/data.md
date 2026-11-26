@@ -30,7 +30,11 @@
    同一位置长名优先（`张翼德` 归张飞，不会再被 `张翼` 抢走半截），且命中后不重复计数
    （旧实现用 `body.count(alias)` 逐个别名统计，`张翼德` 会同时给张飞和张翼各记一次）；
 3. **共现**：同一回内两人同时出现即记一次共现，`count += min(两人在本回的出现次数)`；
-   归一化到 1—100 后写入 `data/build/cooccurrence.csv`，共 **7,873 对**候选。
+   归一化到 1—100 后写入 `data/build/cooccurrence.csv`，共 **7,798 对**候选。
+
+同一遍扫描还顺带产出 `data/build/mentions.csv`（`chapter,person,count`，共 2,552 条），
+即每回每个人物出现几次。P2 的导入脚本据此建 `APPEARS_IN` 边，"这个人在哪几回出现"
+才查得出来——共现表只有配对，撑不起单人时间线。
 
 共现只产生"候选关系"，`type` / `evidence` / `confidence` 全部人工标注后才进 `relations.csv`。
 

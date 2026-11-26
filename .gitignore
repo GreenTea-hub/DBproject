@@ -28,3 +28,6 @@ data/build/*
 
 # ---- 本地工具目录（不参与协作） ----
 .workbuddy/
+
+# ---- Maven 构建产物（dev/neo4j-embed） ----
+target/

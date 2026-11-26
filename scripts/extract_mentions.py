@@ -146,6 +146,21 @@ def write_cooccurrence(pairs, out_path):
     return ordered
 
 
+def write_mentions(per_chapter, out_path):
+    """写出 回目,人物,出现次数。P2 的 import_graph.py 用它建 APPEARS_IN 边。"""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for no in sorted(per_chapter):
+        for name, count in per_chapter[no].most_common():
+            if count > 0:
+                rows.append([no, name, count])
+    with out_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["chapter", "person", "count"])
+        writer.writerows(rows)
+    return rows
+
+
 # ---------------------------------------------------------------- 质检
 
 def _read_csv(path, expected_columns):
@@ -255,6 +270,8 @@ def main():
     parser.add_argument("--top", type=int, default=20, help="打印共现最高的 N 对")
     parser.add_argument("--min-chapters", type=int, default=1, help="至少共现几回才保留")
     parser.add_argument("--out", default=str(BUILD_DIR / "cooccurrence.csv"))
+    parser.add_argument("--mentions-out", default=str(BUILD_DIR / "mentions.csv"),
+                        help="每回人物出现次数，供 import_graph.py 建 APPEARS_IN 边")
     args = parser.parse_args()
 
     if args.validate:
@@ -277,7 +294,9 @@ def main():
     print(f"[3/4] 共现人物对：{len(pairs)} 对")
 
     ordered = write_cooccurrence(pairs, Path(args.out))
+    mentions = write_mentions(per_chapter, Path(args.mentions_out))
     print(f"[4/4] 已写出：{args.out}")
+    print(f"      已写出：{args.mentions_out}（{len(mentions)} 条 回目-人物 记录）")
 
     print(f"\n共现最高的 {args.top} 对（候选关系，需人工标注 type / evidence / confidence）：")
     for (a, b), v in ordered[: args.top]:
