@@ -30,7 +30,10 @@ RELATIONS_CSV = ROOT / "data" / "relations.csv"
 EVENTS_CSV = ROOT / "data" / "events.csv"
 FACTIONS_CSV = ROOT / "data" / "factions.csv"
 
-CHAPTER_RE = re.compile(r"^\s*第\s*([一二三四五六七八九十百零〇\d]+)\s*回[ 　]*(.*)$", re.M)
+CHAPTER_RE = re.compile(
+    r"^[ \t　]*(?:正文[ \t　]*)?第[ \t　]*([一二三四五六七八九十百零〇\d]+)[ \t　]*回[ \t　]*(.*)$",
+    re.M,
+)
 RELATION_TYPES = {"君臣", "兄弟", "敌对", "亲族", "师徒", "同僚"}
 FACTIONS = {"魏", "蜀", "吴", "群雄"}
 
@@ -66,11 +69,16 @@ def build_alias_index(persons):
 # ---------------------------------------------------------------- 章节切分
 
 def iter_chapters(raw_dir=RAW_DIR):
-    """按"第 X 回"切分 raw 目录下所有 txt。返回 (回目号, 标题, 正文) 列表。"""
+    """按"第 X 回"切分 raw 目录下所有 txt。返回 (回目号, 标题, 正文) 列表。
+
+    优先读 split_chapters.py 产出的 data/raw/chapters/*.txt；没有时回退到
+    data/raw/*.txt（整本原文），方便还没切分时先跑一遍。
+    """
     if not raw_dir.exists():
         sys.exit(f"[错误] 找不到原文目录：{raw_dir}（原始语料不入仓库，请从群共享目录拷入）")
 
-    files = sorted(raw_dir.glob("*.txt"))
+    split_dir = raw_dir / "chapters"
+    files = sorted(split_dir.glob("*.txt")) if split_dir.is_dir() else sorted(raw_dir.glob("*.txt"))
     if not files:
         sys.exit(f"[错误] {raw_dir} 下没有 .txt 原文")
 
@@ -91,15 +99,15 @@ def iter_chapters(raw_dir=RAW_DIR):
 # ---------------------------------------------------------------- 统计
 
 def count_mentions(chapters, alias_index):
-    """回目 -> Counter(主名 -> 出现次数)。"""
+    """回目 -> Counter(主名 -> 出现次数)。
+
+    用一条按长度降序排列的正则做单遍扫描：同一位置上长别名优先命中，
+    且命中后不会再被短别名重复统计（"张翼德"只算张飞，不会再算一次"张翼"）。
+    """
+    pattern = re.compile("|".join(re.escape(a) for a in alias_index))  # alias_index 已按长度降序
     per_chapter = {}
     for no, _title, body in chapters:
-        counter = Counter()
-        for alias, name in alias_index.items():
-            hits = body.count(alias)
-            if hits:
-                counter[name] += hits
-        per_chapter[no] = counter
+        per_chapter[no] = Counter(alias_index[m.group(0)] for m in pattern.finditer(body))
     return per_chapter
 
 
