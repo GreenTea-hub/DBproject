@@ -5,16 +5,7 @@
 <h1 id="title">{{ person_name }}</h1>
 
 <div class="grid">
-  <div>
-    <div class="card" id="profile"><p class="empty">加载中…</p></div>
-    <div class="card" style="margin-top:16px;">
-      <h2 style="margin-top:0;">一跳关系</h2>
-      <table>
-        <thead><tr><th>对象</th><th>类型</th><th>权重</th></tr></thead>
-        <tbody id="rel-body"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+  <div class="card" id="profile"><p class="empty">加载中…</p></div>
   <div>
     <div class="row" style="margin-bottom:10px;">
       <label class="muted">关系类型</label>
@@ -34,9 +25,18 @@
         <option value="3">3 层</option>
       </select>
       <button id="btn-graph">刷新关系图</button>
+      <span class="muted">点击图中节点可跳转到该人物</span>
     </div>
     <div class="chart" id="graph"></div>
   </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h2 style="margin-top:0;">一跳关系</h2>
+  <table class="rel">
+    <thead><tr><th>对象</th><th>类型</th><th>权重</th><th>文本出处</th></tr></thead>
+    <tbody id="rel-body"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+  </table>
 </div>
 {% endblock %}
 
@@ -64,19 +64,23 @@
     try {
       const data = await apiGet(`/api/persons/${encodeURIComponent(personName)}/relations`);
       if (!data.items.length) {
-        body.innerHTML = '<tr><td colspan="3" class="muted">暂无关系记录</td></tr>';
+        body.innerHTML = '<tr><td colspan="4" class="muted">暂无关系记录</td></tr>';
         return;
       }
+      // 接口字段：source / target / type / weight / evidence（见 docs/api.md）
       body.innerHTML = data.items.map(r => {
         const other = r.source === personName ? r.target : r.source;
+        const type = r.type ?? r.label ?? '—';
+        const weight = r.weight ?? r.value ?? '—';
         return `<tr>
           <td><a href="/person/${encodeURIComponent(other)}">${esc(other)}</a></td>
-          <td>${esc(r.label)}</td>
-          <td>${esc(r.value)}</td>
+          <td>${esc(type)}</td>
+          <td>${esc(weight)}</td>
+          <td class="muted evidence" title="${esc(r.evidence || '')}">${esc(r.evidence || '—')}</td>
         </tr>`;
       }).join('');
     } catch (err) {
-      body.innerHTML = `<tr><td colspan="3" class="muted">${esc(err.message)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="4" class="muted">${esc(err.message)}</td></tr>`;
     }
   }
 

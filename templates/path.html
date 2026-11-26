@@ -25,21 +25,31 @@
     const from = document.getElementById('from').value.trim();
     const to = document.getElementById('to').value.trim();
     const box = document.getElementById('graph');
-    if (!from || !to) { document.getElementById('result').textContent = '请填写起点和终点'; return; }
+    const result = document.getElementById('result');
+    if (!from || !to) { result.textContent = '请填写起点和终点'; return; }
 
+    result.textContent = '查询中…';
     try {
       const data = await apiGet('/api/path', { from, to, mode: document.getElementById('mode').value });
-      const chain = data.nodes.join(' → ');
-      document.getElementById('result').innerHTML =
-        `路径长度 ${esc(data.length)} 跳${data.cost ? '，总代价 ' + esc(data.cost) : ''}：<strong>${esc(chain)}</strong>`;
+      const nodes = data.nodes || [];
+      if (nodes.length < 2) {
+        result.textContent = '没有找到连通路径，两人之间可能不存在关系链路';
+        box.innerHTML = '<p class="empty">没有可展示的路径</p>';
+        return;
+      }
+      const chain = nodes.join(' → ');
+      const cost = (data.cost ?? data.weight) ? `，总代价 ${esc(data.cost ?? data.weight)}` : '';
+      result.innerHTML = `路径长度 <strong>${esc(data.length ?? nodes.length - 1)}</strong> 跳${cost}：${esc(chain)}`;
       renderPath('graph', data);
     } catch (err) {
-      document.getElementById('result').textContent = err.message;
+      result.textContent = err.message;
       box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     }
   }
 
   document.getElementById('btn-path').onclick = findPath;
+  document.getElementById('from').addEventListener('keydown', e => { if (e.key === 'Enter') findPath(); });
+  document.getElementById('to').addEventListener('keydown', e => { if (e.key === 'Enter') findPath(); });
   findPath();
 </script>
 {% endblock %}

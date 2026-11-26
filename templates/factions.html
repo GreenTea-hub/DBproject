@@ -5,11 +5,22 @@
 <h1>阵营与社区发现</h1>
 
 <div class="card">
-  <div class="row">
-    <button id="btn-community">运行社区发现</button>
-    <button class="ghost" id="btn-pagerank">影响力前十</button>
-    <span class="muted" id="hint">社区发现结果与真实阵营不一定完全一致，正好用于讨论算法与史实的差异</span>
+  <div class="row" style="justify-content:space-between;">
+    <div class="row">
+      <button id="btn-community">运行社区发现</button>
+      <button class="ghost" id="btn-pagerank">影响力前十</button>
+      <button class="ghost" id="btn-smallworld">小世界验证</button>
+    </div>
+    <div class="swatches">
+      <span><i class="swatch wei"></i>魏</span>
+      <span><i class="swatch shu"></i>蜀</span>
+      <span><i class="swatch wu"></i>吴</span>
+      <span><i class="swatch qun"></i>群雄</span>
+    </div>
   </div>
+  <p class="muted" id="hint" style="margin-bottom:0;">
+    社区发现结果与真实阵营不一定完全一致，正好用于讨论算法与史实的差异。
+  </p>
 </div>
 
 <div class="grid" style="margin-top:16px;">
@@ -18,11 +29,18 @@
     <div id="groups"><p class="empty">点击上方按钮开始</p></div>
   </div>
   <div class="card">
-    <h2 style="margin-top:0;">影响力排名</h2>
+    <h2 style="margin-top:0;">影响力排名（PageRank）</h2>
     <table>
-      <thead><tr><th>#</th><th>人物</th><th>得分</th></tr></thead>
+      <thead><tr><th style="width:48px;">#</th><th>人物</th><th>得分</th></tr></thead>
       <tbody id="rank-body"><tr><td colspan="3" class="muted">点击上方按钮开始</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h2 style="margin-top:0;">小世界验证</h2>
+  <div id="smallworld">
+    <p class="empty">点击「小世界验证」抽样计算平均最短路径与聚类系数</p>
   </div>
 </div>
 {% endblock %}
@@ -31,11 +49,14 @@
 <script>
   document.getElementById('btn-community').onclick = async () => {
     const box = document.getElementById('groups');
+    box.innerHTML = '<p class="empty">计算中…</p>';
     try {
       const data = await apiGet('/api/stats/communities');
+      if (!data.items.length) { box.innerHTML = '<p class="empty">当前图规模过小，无法分组</p>'; return; }
       box.innerHTML = data.items.map(g => `
-        <p><strong>社区 ${esc(g.community)}</strong>（${g.members.length} 人）</p>
-        <p class="muted">${esc(g.members.join('、'))}</p>`).join('');
+        <p style="margin:10px 0 0;"><strong>社区 ${esc(g.community)}</strong>
+          <span class="muted">（${g.members.length} 人）</span></p>
+        <p class="muted" style="margin:2px 0 0;">${esc(g.members.join('、'))}</p>`).join('');
     } catch (err) {
       box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     }
@@ -43,14 +64,39 @@
 
   document.getElementById('btn-pagerank').onclick = async () => {
     const body = document.getElementById('rank-body');
+    body.innerHTML = '<tr><td colspan="3" class="muted">计算中…</td></tr>';
     try {
       const data = await apiGet('/api/stats/pagerank', { limit: 10 });
-      body.innerHTML = data.items.map((r, i) => `
-        <tr><td>${i + 1}</td>
-        <td><a href="/person/${encodeURIComponent(r.name)}">${esc(r.name)}</a></td>
-        <td>${esc(r.score)}</td></tr>`).join('');
+      body.innerHTML = data.items.length
+        ? data.items.map((r, i) => `
+          <tr><td>${i + 1}</td>
+          <td><a href="/person/${encodeURIComponent(r.name)}">${esc(r.name)}</a></td>
+          <td>${esc(typeof r.score === 'number' ? r.score.toFixed(4) : r.score)}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
     } catch (err) {
       body.innerHTML = `<tr><td colspan="3" class="muted">${esc(err.message)}</td></tr>`;
+    }
+  };
+
+  document.getElementById('btn-smallworld').onclick = async () => {
+    const box = document.getElementById('smallworld');
+    box.innerHTML = '<p class="empty">抽样计算中…</p>';
+    try {
+      const data = await apiGet('/api/stats/smallworld', { sample: 50 });
+      const avg = typeof data.avg_path === 'number' ? data.avg_path.toFixed(2) : (data.avg_path ?? '—');
+      const clu = typeof data.clustering === 'number' ? data.clustering.toFixed(3) : (data.clustering ?? '—');
+      box.innerHTML = `
+        <div class="stats">
+          <div class="stat"><div class="k">平均最短路径</div><div class="v">${esc(avg)}</div></div>
+          <div class="stat"><div class="k">平均聚类系数</div><div class="v">${esc(clu)}</div></div>
+          <div class="stat"><div class="k">抽样人数</div><div class="v">${esc(data.sample ?? '—')}</div></div>
+        </div>
+        <p class="muted" style="margin-bottom:0;">
+          平均路径短、聚类系数高，说明人物网络具备小世界特征：少数关键人物把各阵营连在一起。
+          ${data.mocked ? '（当前为占位数据，接入真实库后由 P4 的 Cypher/GDS 计算）' : ''}
+        </p>`;
+    } catch (err) {
+      box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
     }
   };
 </script>
