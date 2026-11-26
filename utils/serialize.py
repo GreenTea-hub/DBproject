@@ -12,9 +12,27 @@ FACTION_COLORS = {
 }
 
 
+def _props(entity):
+    """把节点/关系/属性字典统一成普通字典。
+
+    neo4j 5.x 的 Node、Relationship 都实现了 Mapping，走 items() 取属性；
+    查询里也可以用 properties(n) 直接拿字典。两种形态这里都能吃。
+    Record.data() 会把关系变量压成元组，那是取不到属性的，直接报错提示改查询。
+    """
+    if isinstance(entity, dict):
+        return entity
+    items = getattr(entity, "items", None)
+    if callable(items):
+        return dict(items())
+    raise TypeError(
+        f"无法读取属性：{type(entity).__name__}。"
+        "Cypher 里请用 properties(r) 取关系属性，不要直接 RETURN 关系变量"
+    )
+
+
 def node_to_dict(node):
     """Neo4j Node -> 前端节点。id 用业务标识（人物名），不用数据库内部编号。"""
-    props = dict(node)
+    props = _props(node)
     name = props.get("name", "")
     faction = props.get("faction", "群雄")
     return {
@@ -28,7 +46,7 @@ def node_to_dict(node):
 
 
 def rel_to_dict(rel, source_name, target_name, direction="out"):
-    props = dict(rel)
+    props = _props(rel)
     if direction == "in":
         source_name, target_name = target_name, source_name
     return {
@@ -55,7 +73,7 @@ def graph_payload(nodes, links, categories=None):
 
 def person_to_dict(node):
     """人物详情：属性平铺，别名转列表。"""
-    props = dict(node)
+    props = _props(node)
     aliases = props.get("aliases") or []
     if isinstance(aliases, str):
         aliases = [a for a in aliases.replace("，", "|").split("|") if a]

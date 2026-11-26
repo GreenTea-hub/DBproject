@@ -44,12 +44,14 @@ def get_person(name):
         data["chapter_count"] = 0
         return data
 
+    # chapter_count 是"出场回目数"，用 count(DISTINCT a) 数关系条数；
+    # 若用 sum(a.count) 得到的是提及总次数（刘备 2307），与字段名和页面文案对不上。
     cypher = """
     MATCH (p:Person {name: $name})
     OPTIONAL MATCH (p)-[:RELATED_TO]-(o:Person)
     WITH p, count(DISTINCT o) AS relation_count
     OPTIONAL MATCH (p)-[a:APPEARS_IN]->(:Chapter)
-    RETURN p, relation_count, coalesce(sum(a.count), 0) AS chapter_count
+    RETURN p, relation_count, count(DISTINCT a) AS chapter_count
     """
     rows = run_query(cypher, name=name)
     if not rows:
@@ -66,15 +68,18 @@ def list_relations(name):
     if _use_mock():
         return mock.relations(name)
 
+    # 注意：这里必须用 properties(r) 取属性，不能直接 RETURN r。
+    # run_query 走 Record.data()，而 neo4j 5.x 的 data() 会把关系变量压成
+    # (起点属性, 类型, 终点属性) 三元组，接口层再 dict() 就会 500。
     cypher = """
     MATCH (p:Person {name: $name})-[r:RELATED_TO]-(o:Person)
-    RETURN p.name AS source, o.name AS target, r
+    RETURN p.name AS source, o.name AS target, properties(r) AS props
     ORDER BY r.weight DESC
     """
     rows = run_query(cypher, name=name)
     result = []
     for row in rows:
-        item = rel_to_dict(row["r"], row["source"], row["target"])
+        item = rel_to_dict(row["props"], row["source"], row["target"])
         result.append(item)
     return result
 
