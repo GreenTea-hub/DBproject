@@ -17,8 +17,10 @@ bp = Blueprint("event", __name__, url_prefix="/api")
 @bp.get("/events")
 def list_events():
     try:
-        year_from = to_int(request.args.get("year_from"), None, field="year_from")
-        year_to = to_int(request.args.get("year_to"), None, field="year_to")
+        year_from = to_int(request.args.get("year_from"), None, -9999, 9999, field="year_from")
+        year_to = to_int(request.args.get("year_to"), None, -9999, 9999, field="year_to")
+        if year_from is not None and year_to is not None and year_from > year_to:
+            raise ParamError("year_from 不能大于 year_to")
     except ParamError as exc:
         return fail(400, str(exc))
 
@@ -45,4 +47,5 @@ def person_timeline(name):
         name = clean_name(name)
     except ParamError as exc:
         return fail(400, str(exc))
-    return ok({"items": query.timeline(name)})
+    items = query.timeline(name)
+    return ok({"items": items, "total": len(items)})

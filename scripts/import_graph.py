@@ -23,6 +23,11 @@ from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:  # 让脚本在任意目录执行时都能 import utils
+    sys.path.insert(0, str(ROOT))
+
+from utils.validators import RELATION_TYPES  # noqa: E402
+
 DATA = ROOT / "data"
 SCHEMA = ROOT / "graph" / "schema.cypher"
 
@@ -90,6 +95,9 @@ def apply_schema(session):
 # ---------------------------------------------------------------- 各类节点
 
 def load_factions(session, rows):
+    bad_color = [r["name"] for r in rows if not (r.get("color") or "").startswith("#")]
+    if bad_color:
+        print(f"[警告] 阵营缺少合法颜色（#RRGGBB）：{'、'.join(bad_color)}")
     session.run(
         """
         UNWIND $rows AS row
@@ -101,7 +109,22 @@ def load_factions(session, rows):
     print(f"[faction] {len(rows)} 个阵营")
 
 
-def load_persons(session, rows):
+def load_persons(session, rows, known_factions=None):
+    empty_name = sum(1 for r in rows if not r.get("name"))
+    if empty_name:
+        print(f"[警告] persons.csv 有 {empty_name} 行缺少 name，已跳过")
+
+    names = [r["name"] for r in rows if r.get("name")]
+    duplicated = sorted({n for n in names if names.count(n) > 1})
+    if duplicated:
+        print(f"[警告] persons.csv 有重复人物名：{'、'.join(duplicated)}（MERGE 会合并为一人）")
+
+    if known_factions:
+        unknown = sorted({(r.get("faction") or "群雄") for r in rows} - set(known_factions))
+        if unknown:
+            print(f"[警告] 人物阵营未在 factions.csv 定义：{'、'.join(unknown)}"
+                  "（仍会建 Faction 节点，但前端没有配色）")
+
     payload = [{
         "name": r["name"],
         "aliases": split_list(r.get("aliases")),
@@ -110,7 +133,7 @@ def load_persons(session, rows):
         "gender": r.get("gender") or "",
         "birth_year": to_int(r.get("birth_year")),
         "death_year": to_int(r.get("death_year")),
-    } for r in rows]
+    } for r in rows if r.get("name")]
 
     for chunk in batched(payload):
         session.run(
@@ -132,15 +155,70 @@ def load_persons(session, rows):
     print(f"[person] {len(payload)} 人")
 
 
-def load_relations(session, rows):
-    payload = [{
-        "source": r["source"],
-        "target": r["target"],
-        "type": r["type"],
-        "weight": to_int(r.get("weight"), 50),
-        "evidence": r.get("evidence") or "",
-        "confidence": to_float(r.get("confidence"), 0.5),
-    } for r in rows]
+def normalize_pair(source, target):
+    """按 Unicode 顺序归一化方向，与 data/README 的 source < target 约定一致。"""
+    return (source, target) if source <= target else (target, source)
+
+
+def load_relations(session, rows, valid_persons):
+    """导入关系：方向归一化 + 一对人物只保留一条边（取 weight 较大的那条）。
+
+    不做归一化会出现 A→B 与 B→A 两条边，子图与最短路都会被重复边污染；
+    data/README 已约定按 source < target 书写，脚本不能只依赖人工遵守。
+    """
+    seen = {}
+    missing = set()
+    skipped_missing = skipped_type = skipped_empty = duplicates = out_of_range = 0
+
+    for r in rows:
+        source = (r.get("source") or "").strip()
+        target = (r.get("target") or "").strip()
+        if not source or not target:
+            skipped_empty += 1
+            continue
+        if source not in valid_persons or target not in valid_persons:
+            missing.update(n for n in (source, target) if n not in valid_persons)
+            skipped_missing += 1
+            continue
+
+        rel_type = (r.get("type") or "").strip()
+        if rel_type not in RELATION_TYPES:
+            skipped_type += 1
+            continue
+
+        weight = to_int(r.get("weight"), 50)
+        if not 1 <= weight <= 100:
+            weight = max(1, min(weight, 100))
+            out_of_range += 1
+        confidence = to_float(r.get("confidence"), 0.5)
+        if not 0 <= confidence <= 1:
+            confidence = max(0.0, min(confidence, 1.0))
+            out_of_range += 1
+
+        a, b = normalize_pair(source, target)
+        record = {
+            "source": a,
+            "target": b,
+            "type": rel_type,
+            "weight": weight,
+            "evidence": r.get("evidence") or "",
+            "confidence": confidence,
+        }
+        previous = seen.get((a, b))
+        if previous is None:
+            seen[(a, b)] = record
+        else:
+            duplicates += 1
+            if record["weight"] > previous["weight"]:
+                seen[(a, b)] = record
+
+    payload = list(seen.values())
+    if missing:
+        print(f"[警告] 关系引用了 persons.csv 中不存在的人物：{'、'.join(sorted(missing))}")
+    if skipped_type:
+        print(f"[警告] 跳过 {skipped_type} 行：type 不在 {' / '.join(RELATION_TYPES)} 内")
+    if out_of_range:
+        print(f"[警告] {out_of_range} 个 weight / confidence 越界，已截断到合法区间")
 
     for chunk in batched(payload):
         session.run(
@@ -148,24 +226,40 @@ def load_relations(session, rows):
             UNWIND $rows AS row
             MATCH (a:Person {name: row.source})
             MATCH (b:Person {name: row.target})
-            MERGE (a)-[r:RELATED_TO {type: row.type}]->(b)
-            SET r.weight = row.weight, r.evidence = row.evidence, r.confidence = row.confidence
+            MERGE (a)-[r:RELATED_TO]-(b)
+            SET r.type = row.type, r.weight = row.weight,
+                r.evidence = row.evidence, r.confidence = row.confidence
             """,
             rows=chunk,
         ).consume()
-    print(f"[relation] {len(payload)} 条关系")
+    print(f"[relation] 输入 {len(rows)} 行 → 去重后 {len(payload)} 条"
+          f"（重复 {duplicates}，缺人物 {skipped_missing}，非法类型 {skipped_type}，空行 {skipped_empty}）")
 
 
-def load_events(session, rows):
-    """事件同时挂 Chapter（IN_CHAPTER）与 Place（OCCURRED_AT），并挂参与者。"""
+def load_events(session, rows, valid_persons):
+    """事件同时挂 Chapter（IN_CHAPTER）与 Place（OCCURRED_AT），并挂参与者。
+
+    参与者只 MATCH 已存在的人物，绝不用 MERGE 现场造节点：
+    否则一个错别字就会生成没有阵营、没有别名的“影子人物”，污染全库。
+    """
     events = []
+    missing = set()
+    bad_chapter = 0
+
     for r in rows:
         chapter_no = to_int(r.get("chapter"))
+        if chapter_no is not None and not 1 <= chapter_no <= 120:
+            bad_chapter += 1
         participants = []
         for item in split_list(r.get("participants")):
             person, _, role = item.partition(":")
-            if person:
-                participants.append({"name": person, "role": role or "参与"})
+            person = person.strip()
+            if not person:
+                continue
+            if person not in valid_persons:
+                missing.add(person)
+                continue
+            participants.append({"name": person, "role": role.strip() or "参与"})
         events.append({
             "name": r["name"],
             "year": to_int(r.get("year")),
@@ -174,6 +268,11 @@ def load_events(session, rows):
             "place": r.get("place") or "",
             "participants": participants,
         })
+
+    if bad_chapter:
+        print(f"[警告] {bad_chapter} 个事件的回目号不在 1—120 内，请核对 events.csv")
+    if missing:
+        print(f"[警告] 事件参与者不在 persons.csv 中，已跳过：{'、'.join(sorted(missing))}")
 
     for chunk in batched(events):
         session.run(
@@ -193,8 +292,8 @@ def load_events(session, rows):
             )
             WITH e, row
             UNWIND (CASE WHEN size(row.participants) = 0 THEN [null] ELSE row.participants END) AS part
-            FOREACH (_ IN CASE WHEN part IS NULL THEN [] ELSE [1] END |
-                MERGE (p:Person {name: part.name})
+            OPTIONAL MATCH (p:Person {name: part.name})
+            FOREACH (_ IN CASE WHEN p IS NULL THEN [] ELSE [1] END |
                 MERGE (p)-[pr:PARTICIPATED_IN]->(e)
                 SET pr.role = part.role
             )
@@ -234,13 +333,29 @@ def load_appears_in(session):
 # ---------------------------------------------------------------- 核对
 
 CHECK_QUERY = """
-MATCH (p:Person) WITH count(p) AS persons
-MATCH (f:Faction) WITH persons, count(f) AS factions
-MATCH (e:Event) WITH persons, factions, count(e) AS events
-MATCH (c:Chapter) WITH persons, factions, events, count(c) AS chapters
-MATCH ()-[r:RELATED_TO]->() WITH persons, factions, events, chapters, count(r) AS relations
-OPTIONAL MATCH (orphan:Person) WHERE NOT (orphan)-[:RELATED_TO]-()
-RETURN persons, factions, events, chapters, relations, count(orphan) AS isolated
+MATCH (p:Person)
+WITH count(p) AS persons
+OPTIONAL MATCH (f:Faction)
+WITH persons, count(f) AS factions
+OPTIONAL MATCH (e:Event)
+WITH persons, factions, count(e) AS events
+OPTIONAL MATCH (c:Chapter)
+WITH persons, factions, events, count(c) AS chapters
+OPTIONAL MATCH ()-[r:RELATED_TO]->()
+WITH persons, factions, events, chapters, count(r) AS relations
+OPTIONAL MATCH (orphan:Person)
+WHERE NOT (orphan)-[:RELATED_TO]-()
+WITH persons, factions, events, chapters, relations, count(orphan) AS isolated
+OPTIONAL MATCH (a:Person)-[:RELATED_TO]->(b:Person)
+WHERE a.name > b.name
+WITH persons, factions, events, chapters, relations, isolated, count(a) AS reversed
+OPTIONAL MATCH (np:Person)
+WHERE np.faction IS NULL OR np.faction = ''
+WITH persons, factions, events, chapters, relations, isolated, reversed, count(np) AS no_faction
+OPTIONAL MATCH (ee:Event)
+WHERE NOT (ee)<-[:PARTICIPATED_IN]-()
+RETURN persons, factions, events, chapters, relations, isolated,
+       reversed, no_faction, count(ee) AS empty_events
 """
 
 
@@ -248,7 +363,11 @@ def check(session):
     row = session.run(CHECK_QUERY).single()
     if row is None:
         print("[check] 数据库为空")
-        return
+        return None
+    if row["persons"] == 0:
+        print("[check] 数据库为空（0 个 Person）")
+        return dict(row)
+
     print("\n[check] 入库核对")
     print(f"  Person           {row['persons']}")
     print(f"  Faction          {row['factions']}")
@@ -256,6 +375,10 @@ def check(session):
     print(f"  Chapter          {row['chapters']}")
     print(f"  RELATED_TO       {row['relations']}")
     print(f"  孤立人物         {row['isolated']}")
+    print(f"  反向关系边       {row['reversed']}（应为 0，非 0 说明数据绕过了导入脚本）")
+    print(f"  缺阵营人物       {row['no_faction']}")
+    print(f"  无参与者事件     {row['empty_events']}")
+    return dict(row)
 
 
 # ---------------------------------------------------------------- 主流程
@@ -280,10 +403,13 @@ def main():
                 return
 
             apply_schema(session)
-            load_factions(session, read_csv("factions.csv"))
-            load_persons(session, read_csv("persons.csv"))
-            load_relations(session, read_csv("relations.csv"))
-            load_events(session, read_csv("events.csv"))
+            factions = read_csv("factions.csv")
+            persons = read_csv("persons.csv")
+            valid_persons = {r["name"] for r in persons if r.get("name")}
+            load_factions(session, factions)
+            load_persons(session, persons, {f["name"] for f in factions})
+            load_relations(session, read_csv("relations.csv"), valid_persons)
+            load_events(session, read_csv("events.csv"), valid_persons)
             load_appears_in(session)
             check(session)
     finally:
