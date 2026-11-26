@@ -35,8 +35,13 @@ mvn -q compile exec:java
 认证是关的，`.env` 里 `NEO4J_PASSWORD` 随便填一个非空值（脚本只检查它非空）。
 换端口：`mvn -q compile exec:java -Dexec.args="target/neo4j-home 7688 7475"`。
 
-数据落在 `dev/neo4j-embed/target/neo4j-home`（已 gitignore）。**想清空重来，停掉进程后删掉这个目录**——
-`import_graph.py` 是幂等的，但删掉目录是唯一能把约束也一起清掉的办法。
+数据落在 `dev/neo4j-embed/target/neo4j-home/data`（已 gitignore），**重启复用，不会丢**。
+想清空重来：停掉进程后删掉 `target/neo4j-home/data` 再启动——`import_graph.py` 是幂等的，
+但只有删目录能把约束也一起清掉。
+
+> 目录里那些 32 位十六进制名的子目录（如 `d56e5852...`）是 harness 每次启动新建的临时
+> 工作目录，只放日志和配置，几十 KB。之所以要把 `data_directory` 显式钉死，是因为
+> harness 默认把数据也建在随机子目录里，重启即空库。攒多了可以随手删掉。
 
 ## 用它跑一遍导入
 
@@ -54,7 +59,8 @@ python scripts/build_graph.py       # 建结构 + 导入 + 对账
 
 - **没有 Browser 界面**：`http://127.0.0.1:7474/browser` 是 404。要看图请起 Flask 应用
   （`MOCK_DATA=0`）走页面，或直接用 Python 驱动跑 Cypher。
-- **不是服务**：进程退出数据就关闭，重启会复用同一目录。别拿它当常驻服务。
+- **不是服务**：进程退出即关闭，没有守护进程；数据目录固定，重启后数据仍在。
+  别拿它当常驻服务，正式环境请用安装包。
 - **内存**：默认按机器内存自动分配，一般够 179 人 / 333 边这个量级；如果机器特别小，
   在 `EmbedServer.java` 里加 `.withConfig(GraphDatabaseSettings.pagecache_memory, "128M")`。
 
@@ -62,7 +68,9 @@ python scripts/build_graph.py       # 建结构 + 导入 + 对账
 
 ### 1. `Non-parseable settings .../conf/settings.xml`
 
-本机 Maven 的全局配置文件坏了（常见于手动改过镜像却没写闭合标签）。用一份空配置绕开：
+Maven 全局配置被改坏（常见于手动加镜像却没写 `</mirrors>` 闭合标签）。本机那份已修好
+（备份 `settings.xml.bak-20261126`），别的机器遇到时，要么照第 3 节把镜像配置补对，
+要么用一份空配置临时绕开：
 
 ```bash
 echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"></settings>' > /tmp/g.xml

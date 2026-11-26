@@ -30,8 +30,13 @@ public final class EmbedServer {
 
         Files.createDirectories(home);
 
+        // harness 每次启动都会在 home 下新建一个随机名子目录，数据跟着就换地方了，
+        // 重启等于空库。把 data_directory 钉死在 home/data，重启才能复用。
+        Path dataDir = home.resolve("data").toAbsolutePath();
+
         Neo4j server = Neo4jBuilders.newInProcessBuilder(home)
                 .withConfig(GraphDatabaseSettings.auth_enabled, false)
+                .withConfig(GraphDatabaseSettings.data_directory, dataDir)
                 .withConfig(BoltConnector.enabled, true)
                 .withConfig(BoltConnector.listen_address, new SocketAddress("127.0.0.1", boltPort))
                 .withConfig(BoltConnector.advertised_address, new SocketAddress("127.0.0.1", boltPort))
