@@ -28,4 +28,19 @@
 
 ### 4. 页面能打开，关系图空白
 - 原因：`static/vendor/echarts.min.js` 没放，且答辩环境无外网导致 CDN 也加载不到。
-- 解决：提前把 ECharts 下载进 `static/vendor/`（见该目录 README），断网彩排一次。
+- 解决：**已由 P5 把 ECharts 5.5.1 提交进 `static/vendor/`**（md5 `ef12c5c6…`），拉到仓库即有；
+  只有当 `git status` 显示该文件缺失时才需要重新下载（见 `static/vendor/README.md`）。
+- 耗时：5 分钟（含一次断网彩排）
+
+### 5. 生产环境把 `.env.example` 直接复制成 `.env` 用，页面能看到调试报错堆栈
+- 现象：浏览器上直接显示 Python traceback，或数据库连不上却仍显示样例数据。
+- 原因：`.env.example` 是开发模板，`FLASK_DEBUG=1`、`MOCK_DATA=1`；生产要反过来。
+- 解决：生产 `.env` 必须是 `FLASK_DEBUG=0`、`MOCK_DATA=0`，并填真实的 `NEO4J_PASSWORD`；
+  `deploy/install.sh` 自动生成的就是生产值，手工部署时别直接 `cp .env.example .env` 了事。
+- 耗时：10 分钟（先怀疑数据库，最后发现是配置）
+
+### 6. 页面样式或脚本改了但浏览器看不出变化
+- 现象：`style.css`、`graph.js` 改完刷新页面没反应，甚至关系图工具栏不出现。
+- 原因：Flask 静态文件带缓存头，浏览器复用了旧文件。
+- 解决：`Ctrl + F5` 强制刷新；确认 URL 没被 CDN 缓存（本项目的 ECharts 已本地化，不存在这个问题）。
+- 耗时：3 分钟

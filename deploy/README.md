@@ -3,6 +3,30 @@
 > 目标环境：Ubuntu 22.04 LTS（虚拟机 4 核 / 8 GB），Neo4j 5.x 社区版 tar 包 + Flask + Gunicorn。
 > 对外只开放 **5000**；7474 与 7687 不对外开放，只允许本机访问。
 
+## 快速路径：一键脚本（推荐）
+
+全新虚拟机上一条命令走完下面第 1—8 节（装 JDK、Neo4j、GDS、venv、依赖、建库、systemd、防火墙、自检）：
+
+```bash
+git clone <仓库地址> DBproject && cd DBproject
+bash deploy/install.sh --password '你的Neo4j密码'
+```
+
+脚本可重复执行，已完成的步骤自动跳过；装完会打印访问地址与后续操作。
+装完请在浏览器打开 `http://<服务器IP>:5000/`，并跑一次 `./venv/bin/python scripts/smoke.py`。
+
+日常更新（合并后由轮值负责人在服务器上执行）：
+
+```bash
+bash deploy/update.sh                 # 拉 main、补依赖、重启、跑冒烟
+bash deploy/update.sh --ref v1.0      # 切到某个 tag；冒烟失败时用它回滚
+```
+
+> 脚本只是把这套手工步骤写成可执行版本，**第一次部署仍建议照着下面 1—8 节手工走一遍**，
+> 知道每一步在做什么，答辩被问到时才讲得清。手工步骤与脚本的对应关系见文末附录 B。
+
+## 手工路径
+
 ## 0. 前置检查
 
 ```bash
@@ -113,3 +137,59 @@ python scripts/smoke.py
 ```
 
 冒烟全绿、Windows 端能打开首页、关系图能渲染，即部署完成。把这一步的踩坑记到 `docs/deploy.md`。
+
+## 附录 A：常见运维操作
+
+### 修改 Neo4j 密码（同时改 .env，否则接口 401）
+
+```bash
+sudo -u neo4j /opt/neo4j/bin/cypher-shell -u neo4j -p '旧密码' \
+  "ALTER CURRENT USER SET PASSWORD FROM '旧密码' TO '新密码';"
+sudo -u sanguo sed -i 's/^NEO4J_PASSWORD=.*/NEO4J_PASSWORD=新密码/' /opt/sanguo-graph/.env
+sudo systemctl restart sanguo
+```
+
+### 忘记 Neo4j 密码（只影响演示环境）
+
+停库后删除账号数据会把图数据一起清空，必须重新执行 `scripts/build_graph.py`：
+
+```bash
+sudo -u neo4j /opt/neo4j/bin/neo4j stop
+sudo rm -rf /opt/neo4j/data/dbms
+sudo -u neo4j /opt/neo4j/bin/neo4j-admin dbms set-initial-password '新密码'
+sudo -u neo4j /opt/neo4j/bin/neo4j start
+sudo -u sanguo /opt/sanguo-graph/venv/bin/python /opt/sanguo-graph/scripts/build_graph.py
+```
+
+### 回滚到上一个可用版本
+
+```bash
+cd /opt/sanguo-graph && git log --oneline -5          # 找到上一个 tag 或 commit
+bash deploy/update.sh --ref v0.5                       # 切回去并重跑冒烟
+```
+
+### 常用排查命令
+
+```bash
+sudo systemctl status sanguo -l          # 应用服务状态
+sudo journalctl -u sanguo -n 100 --no-pager   # 应用日志
+sudo -u neo4j /opt/neo4j/bin/neo4j status     # 数据库状态
+sudo tail -f /opt/neo4j/logs/neo4j.log        # 数据库日志
+curl -s http://127.0.0.1:5000/api/health      # 自检：db 为 true 才算真连上
+```
+
+## 附录 B：脚本与手工步骤对应关系
+
+| `deploy/install.sh` 步骤 | 对应章节 |
+|---|---|
+| 安装 openjdk-17 / python3.11 / git / ufw | 第 1、4 节 |
+| 下载 Neo4j tar 包、写 neo4j.conf、初始化密码 | 第 2 节 |
+| 下载 GDS jar 并放开 `gds.*` 过程 | 第 3 节 |
+| git clone、创建 venv、pip install、生成 .env | 第 4 节 |
+| `scripts/build_graph.py` 建约束并导入 | 第 5 节 |
+| 注册 systemd 服务并重启 | 第 6 节 |
+| ufw 放行 22/5000、拒绝 7474/7687 | 第 7 节 |
+| 轮询 `/api/health` 并打印访问地址 | 第 8 节 |
+
+`deploy/update.sh` 只做三件事：`git pull` → `pip install -r` → 重启并跑冒烟，失败即提示回滚命令。
+
