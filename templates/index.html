@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}人物检索 · 三国演义人物关系图谱{% endblock %}
+
+{% block content %}
+<h1>人物检索</h1>
+<div class="card">
+  <div class="row">
+    <input type="text" id="kw" placeholder="输入姓名或别名，如 玄德、孔明" style="flex:1;min-width:220px;">
+    <select id="faction">
+      <option value="">全部阵营</option>
+      <option value="魏">魏</option>
+      <option value="蜀">蜀</option>
+      <option value="吴">吴</option>
+      <option value="群雄">群雄</option>
+    </select>
+    <button id="btn-search">搜索</button>
+  </div>
+  <p class="muted" id="hint"></p>
+</div>
+
+<div class="grid" style="margin-top:16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">人物列表</h2>
+    <ul class="list" id="person-list"><li class="empty">加载中…</li></ul>
+    <div class="row" style="justify-content:space-between;margin-top:12px;">
+      <button class="ghost" id="prev">上一页</button>
+      <span class="muted" id="pager"></span>
+      <button class="ghost" id="next">下一页</button>
+    </div>
+  </div>
+  <div class="chart" id="graph"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let page = 1;
+  const size = 20;
+  let total = 0;
+
+  async function loadList() {
+    const list = document.getElementById('person-list');
+    try {
+      const data = await apiGet('/api/persons', {
+        q: document.getElementById('kw').value.trim(),
+        faction: document.getElementById('faction').value,
+        page, size,
+      });
+      total = data.total;
+      if (!data.items.length) {
+        list.innerHTML = '<li class="empty">没有匹配的人物</li>';
+      } else {
+        list.innerHTML = data.items.map(p => `
+          <li>
+            <a href="/person/${encodeURIComponent(p.name)}">${esc(p.name)}</a>${tagHtml(p.faction)}
+            <div class="muted">${esc((p.aliases || []).join('、')) || '无别名'}</div>
+          </li>`).join('');
+      }
+      const pages = Math.max(1, Math.ceil(total / size));
+      document.getElementById('pager').textContent = `第 ${page} / ${pages} 页 · 共 ${total} 人`;
+      document.getElementById('hint').textContent = `共 ${total} 人，点击姓名查看详情与关系图`;
+    } catch (err) {
+      list.innerHTML = `<li class="empty">${esc(err.message)}</li>`;
+    }
+  }
+
+  async function loadDefaultGraph() {
+    try {
+      const data = await apiGet('/api/persons/刘备/graph', { depth: 2 });
+      renderGraph('graph', data, { onNodeClick: name => location.href = `/person/${encodeURIComponent(name)}` });
+    } catch (err) {
+      document.getElementById('graph').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    }
+  }
+
+  document.getElementById('btn-search').onclick = () => { page = 1; loadList(); };
+  document.getElementById('kw').addEventListener('keydown', e => { if (e.key === 'Enter') { page = 1; loadList(); } });
+  document.getElementById('prev').onclick = () => { if (page > 1) { page--; loadList(); } };
+  document.getElementById('next').onclick = () => { if (page * size < total) { page++; loadList(); } };
+
+  loadList();
+  loadDefaultGraph();
+</script>
+{% endblock %}

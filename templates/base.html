@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}三国演义人物关系图谱{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <!-- 母版结构由 P5 定义：其他人只填 block，不要改这里 -->
+  <header class="topbar">
+    <a class="brand" href="/">三国·人物关系图谱</a>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if active == 'home' }}">人物</a>
+      <a href="/path" class="{{ 'active' if active == 'path' }}">关系路径</a>
+      <a href="/factions" class="{{ 'active' if active == 'factions' }}">阵营视图</a>
+      <a href="/timeline" class="{{ 'active' if active == 'timeline' }}">生平时间线</a>
+      <a href="/admin" class="{{ 'active' if active == 'admin' }}">数据管理</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    数据库系统原理课程设计 · 图数据库 Neo4j + Flask + ECharts
+  </footer>
+
+  <script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"
+          onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js';"></script>
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

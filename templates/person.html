@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ person_name }} · 人物详情{% endblock %}
+
+{% block content %}
+<h1 id="title">{{ person_name }}</h1>
+
+<div class="grid">
+  <div>
+    <div class="card" id="profile"><p class="empty">加载中…</p></div>
+    <div class="card" style="margin-top:16px;">
+      <h2 style="margin-top:0;">一跳关系</h2>
+      <table>
+        <thead><tr><th>对象</th><th>类型</th><th>权重</th></tr></thead>
+        <tbody id="rel-body"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <div class="row" style="margin-bottom:10px;">
+      <label class="muted">关系类型</label>
+      <select id="types">
+        <option value="">全部</option>
+        <option value="君臣">君臣</option>
+        <option value="兄弟">兄弟</option>
+        <option value="敌对">敌对</option>
+        <option value="亲族">亲族</option>
+        <option value="师徒">师徒</option>
+        <option value="同僚">同僚</option>
+      </select>
+      <label class="muted">深度</label>
+      <select id="depth">
+        <option value="1">1 层</option>
+        <option value="2" selected>2 层</option>
+        <option value="3">3 层</option>
+      </select>
+      <button id="btn-graph">刷新关系图</button>
+    </div>
+    <div class="chart" id="graph"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const personName = {{ person_name | tojson }};
+
+  async function loadProfile() {
+    try {
+      const p = await apiGet(`/api/persons/${encodeURIComponent(personName)}`);
+      document.getElementById('title').innerHTML = `${esc(p.name)}${tagHtml(p.faction)}`;
+      document.getElementById('profile').innerHTML = `
+        <p><strong>姓名</strong>：${esc(p.name)}</p>
+        <p><strong>别名</strong>：${esc((p.aliases || []).join('、')) || '—'}</p>
+        <p><strong>阵营 / 身份</strong>：${esc(p.faction || '—')} / ${esc(p.role || '—')}</p>
+        <p><strong>生卒</strong>：${esc(p.birth_year ?? '—')} — ${esc(p.death_year ?? '—')}</p>
+        <p class="muted">关系数 ${esc(p.relation_count ?? 0)} · 出现回目 ${esc(p.chapter_count ?? 0)} 次</p>`;
+    } catch (err) {
+      document.getElementById('profile').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    }
+  }
+
+  async function loadRelations() {
+    const body = document.getElementById('rel-body');
+    try {
+      const data = await apiGet(`/api/persons/${encodeURIComponent(personName)}/relations`);
+      if (!data.items.length) {
+        body.innerHTML = '<tr><td colspan="3" class="muted">暂无关系记录</td></tr>';
+        return;
+      }
+      body.innerHTML = data.items.map(r => {
+        const other = r.source === personName ? r.target : r.source;
+        return `<tr>
+          <td><a href="/person/${encodeURIComponent(other)}">${esc(other)}</a></td>
+          <td>${esc(r.label)}</td>
+          <td>${esc(r.value)}</td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="3" class="muted">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  async function loadGraph() {
+    const box = document.getElementById('graph');
+    try {
+      const data = await apiGet(`/api/persons/${encodeURIComponent(personName)}/graph`, {
+        depth: document.getElementById('depth').value,
+        types: document.getElementById('types').value,
+      });
+      if (!data.nodes.length) { box.innerHTML = '<p class="empty">该深度下没有可展示的邻居</p>'; return; }
+      renderGraph('graph', data, { onNodeClick: name => location.href = `/person/${encodeURIComponent(name)}` });
+    } catch (err) {
+      box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    }
+  }
+
+  document.getElementById('btn-graph').onclick = loadGraph;
+  loadProfile();
+  loadRelations();
+  loadGraph();
+</script>
+{% endblock %}

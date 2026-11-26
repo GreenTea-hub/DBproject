@@ -1,0 +1,112 @@
+/* 全站样式。负责人：P5。配色采用阵营色：魏蓝、蜀红、吴绿、群雄灰 */
+
+:root {
+  --wei: #1f6fd0;
+  --shu: #c0392b;
+  --wu: #1e8e5a;
+  --qun: #7f8c8d;
+  --text: #23272f;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.6;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 28px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand { font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; }
+
+.nav { display: flex; gap: 18px; }
+.nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding-bottom: 2px; }
+.nav a:hover { color: var(--text); }
+.nav a.active { color: var(--text); border-bottom: 2px solid var(--shu); }
+
+.container { max-width: 1180px; margin: 0 auto; padding: 24px 28px 48px; }
+
+.footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px 0 32px; }
+
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 17px; margin: 24px 0 12px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+input[type="text"], input[type="number"], select {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--shu);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:hover { opacity: .9; }
+button.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
+
+.grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.list li:last-child { border-bottom: none; }
+.list a { color: var(--text); text-decoration: none; font-weight: 600; }
+.list a:hover { color: var(--shu); }
+
+.tag {
+  display: inline-block;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: #fff;
+  margin-left: 6px;
+}
+.tag.wei { background: var(--wei); }
+.tag.shu { background: var(--shu); }
+.tag.wu { background: var(--wu); }
+.tag.qun { background: var(--qun); }
+
+.chart { width: 100%; height: 560px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.chart.small { height: 380px; }
+
+.muted { color: var(--muted); font-size: 13px; }
+.empty { color: var(--muted); text-align: center; padding: 40px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }

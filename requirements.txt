@@ -1,0 +1,7 @@
+# 依赖清单：只由 P3 修改，其他人需要新依赖请在群里提，不要直接改本文件
+Flask==3.0.3
+python-dotenv==1.0.1
+neo4j==5.23.0
+gunicorn==22.0.0
+requests==2.32.3
+pandas==2.2.3

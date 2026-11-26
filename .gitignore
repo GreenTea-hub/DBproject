@@ -1,0 +1,27 @@
+# ---- 虚拟环境与缓存 ----
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 敏感配置 ----
+.env
+
+# ---- 数据 ----
+# 原始语料与中间产物体积大，由 P1 统一放群共享目录
+data/raw/*
+!data/raw/.gitkeep
+data/build/*
+!data/build/.gitkeep
+*.log
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ---- 其他 ----
+*.zip
+*.rar

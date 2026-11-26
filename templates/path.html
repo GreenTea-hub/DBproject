@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}关系路径 · 三国演义人物关系图谱{% endblock %}
+
+{% block content %}
+<h1>关系路径探索</h1>
+<div class="card">
+  <div class="row">
+    <input type="text" id="from" placeholder="起点，如 刘备" value="刘备">
+    <span class="muted">→</span>
+    <input type="text" id="to" placeholder="终点，如 曹操" value="曹操">
+    <select id="mode">
+      <option value="shortest">最少跳数</option>
+      <option value="weighted">关系最强（加权）</option>
+    </select>
+    <button id="btn-path">查找路径</button>
+  </div>
+  <p class="muted" id="result"></p>
+</div>
+<div class="chart" id="graph" style="margin-top:16px;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function findPath() {
+    const from = document.getElementById('from').value.trim();
+    const to = document.getElementById('to').value.trim();
+    const box = document.getElementById('graph');
+    if (!from || !to) { document.getElementById('result').textContent = '请填写起点和终点'; return; }
+
+    try {
+      const data = await apiGet('/api/path', { from, to, mode: document.getElementById('mode').value });
+      const chain = data.nodes.join(' → ');
+      document.getElementById('result').innerHTML =
+        `路径长度 ${esc(data.length)} 跳${data.cost ? '，总代价 ' + esc(data.cost) : ''}：<strong>${esc(chain)}</strong>`;
+      renderPath('graph', data);
+    } catch (err) {
+      document.getElementById('result').textContent = err.message;
+      box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    }
+  }
+
+  document.getElementById('btn-path').onclick = findPath;
+  findPath();
+</script>
+{% endblock %}

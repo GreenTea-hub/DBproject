@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}阵营视图 · 三国演义人物关系图谱{% endblock %}
+
+{% block content %}
+<h1>阵营与社区发现</h1>
+
+<div class="card">
+  <div class="row">
+    <button id="btn-community">运行社区发现</button>
+    <button class="ghost" id="btn-pagerank">影响力前十</button>
+    <span class="muted" id="hint">社区发现结果与真实阵营不一定完全一致，正好用于讨论算法与史实的差异</span>
+  </div>
+</div>
+
+<div class="grid" style="margin-top:16px;">
+  <div class="card">
+    <h2 style="margin-top:0;">分组结果</h2>
+    <div id="groups"><p class="empty">点击上方按钮开始</p></div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">影响力排名</h2>
+    <table>
+      <thead><tr><th>#</th><th>人物</th><th>得分</th></tr></thead>
+      <tbody id="rank-body"><tr><td colspan="3" class="muted">点击上方按钮开始</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('btn-community').onclick = async () => {
+    const box = document.getElementById('groups');
+    try {
+      const data = await apiGet('/api/stats/communities');
+      box.innerHTML = data.items.map(g => `
+        <p><strong>社区 ${esc(g.community)}</strong>（${g.members.length} 人）</p>
+        <p class="muted">${esc(g.members.join('、'))}</p>`).join('');
+    } catch (err) {
+      box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+    }
+  };
+
+  document.getElementById('btn-pagerank').onclick = async () => {
+    const body = document.getElementById('rank-body');
+    try {
+      const data = await apiGet('/api/stats/pagerank', { limit: 10 });
+      body.innerHTML = data.items.map((r, i) => `
+        <tr><td>${i + 1}</td>
+        <td><a href="/person/${encodeURIComponent(r.name)}">${esc(r.name)}</a></td>
+        <td>${esc(r.score)}</td></tr>`).join('');
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="3" class="muted">${esc(err.message)}</td></tr>`;
+    }
+  };
+</script>
+{% endblock %}

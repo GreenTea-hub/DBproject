@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}数据管理 · 三国演义人物关系图谱{% endblock %}
+
+{% block content %}
+<h1>数据管理</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2 style="margin-top:0;">新增人物</h2>
+    <div class="row" style="flex-direction:column;align-items:stretch;">
+      <input type="text" id="name" placeholder="姓名（唯一）">
+      <input type="text" id="aliases" placeholder="别名，用 | 分隔：玄德|刘皇叔">
+      <select id="faction">
+        <option value="蜀">蜀</option>
+        <option value="魏">魏</option>
+        <option value="吴">吴</option>
+        <option value="群雄" selected>群雄</option>
+      </select>
+      <input type="text" id="role" placeholder="身份，如 武将">
+      <button id="btn-create">写入数据库</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0;">删除人物</h2>
+      <div class="row">
+        <input type="text" id="del-name" placeholder="要删除的人物名" style="flex:1;">
+        <button id="btn-delete">删除</button>
+      </div>
+      <p class="muted">删除会连同关系一起清除（DETACH DELETE），冒烟检查会验证无残留边。</p>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2 style="margin-top:0;">合并重复人物</h2>
+      <div class="row">
+        <input type="text" id="keep" placeholder="保留：诸葛亮">
+        <input type="text" id="drop" placeholder="合并掉：孔明">
+        <button id="btn-merge">合并</button>
+      </div>
+      <p class="muted">别名与关系会并入保留者，随后删除被合并的节点。</p>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2 style="margin-top:0;">操作结果</h2>
+      <pre id="output" class="muted" style="white-space:pre-wrap;margin:0;">—</pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const out = document.getElementById('output');
+  const show = (obj) => { out.textContent = JSON.stringify(obj, null, 2); };
+
+  document.getElementById('btn-create').onclick = async () => {
+    try {
+      const data = await apiSend('POST', '/api/persons', {
+        name: document.getElementById('name').value.trim(),
+        aliases: document.getElementById('aliases').value.trim(),
+        faction: document.getElementById('faction').value,
+        role: document.getElementById('role').value.trim(),
+      });
+      show(data);
+    } catch (err) { out.textContent = err.message; }
+  };
+
+  document.getElementById('btn-delete').onclick = async () => {
+    const name = document.getElementById('del-name').value.trim();
+    if (!name) return;
+    try {
+      show(await apiSend('DELETE', `/api/persons/${encodeURIComponent(name)}`));
+    } catch (err) { out.textContent = err.message; }
+  };
+
+  document.getElementById('btn-merge').onclick = async () => {
+    try {
+      show(await apiSend('POST', '/api/persons/merge', {
+        keep: document.getElementById('keep').value.trim(),
+        drop: document.getElementById('drop').value.trim(),
+      }));
+    } catch (err) { out.textContent = err.message; }
+  };
+</script>
+{% endblock %}

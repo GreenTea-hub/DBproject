@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}生平时间线 · 三国演义人物关系图谱{% endblock %}
+
+{% block content %}
+<h1>人物生平时间线</h1>
+<div class="card">
+  <div class="row">
+    <input type="text" id="name" placeholder="输入人物，如 诸葛亮" value="刘备">
+    <button id="btn-timeline">查看时间线</button>
+  </div>
+  <p class="muted" id="hint"></p>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <table>
+    <thead><tr><th style="width:90px;">年份</th><th style="width:70px;">回目</th><th>事件</th><th>结果</th></tr></thead>
+    <tbody id="body"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadTimeline() {
+    const name = document.getElementById('name').value.trim();
+    const body = document.getElementById('body');
+    if (!name) return;
+    try {
+      const data = await apiGet(`/api/timeline/${encodeURIComponent(name)}`);
+      document.getElementById('hint').textContent = `共 ${data.items.length} 条相关事件`;
+      body.innerHTML = data.items.length
+        ? data.items.map(e => `<tr>
+            <td>${esc(e.year ?? '—')}</td>
+            <td>第 ${esc(e.chapter)} 回</td>
+            <td>${esc(e.event)}</td>
+            <td>${esc(e.result || '')}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="4" class="muted">该人物暂无事件记录</td></tr>';
+    } catch (err) {
+      body.innerHTML = `<tr><td colspan="4" class="muted">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  document.getElementById('btn-timeline').onclick = loadTimeline;
+  loadTimeline();
+</script>
+{% endblock %}
