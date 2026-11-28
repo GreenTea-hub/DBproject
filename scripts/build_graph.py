@@ -6,6 +6,8 @@
 用法：
     python scripts/build_graph.py            # 结构与数据全量重建（幂等，不删已有数据）
     python scripts/build_graph.py --reset    # 先清空库再导入（会二次确认）
+    python scripts/build_graph.py --schema   # 只建约束与索引
+    python scripts/build_graph.py --check    # 只做入库核对（部署手册第 5 节用）
 """
 
 import argparse
@@ -28,6 +30,8 @@ def run(*args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="清空数据库后重建")
+    parser.add_argument("--schema", action="store_true", help="只建约束与索引")
+    parser.add_argument("--check", action="store_true", help="只做数量核对（部署手册第 5 节用）")
     args = parser.parse_args()
 
     if args.reset:
@@ -47,6 +51,13 @@ def main():
             session.run("MATCH (n) DETACH DELETE n").consume()
         driver.close()
         print("[reset] 已清空")
+
+    if args.check:
+        run("--check")
+        return
+    if args.schema:
+        run("--schema")
+        return
 
     run("--schema")
     run()
