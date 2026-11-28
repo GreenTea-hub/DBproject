@@ -30,18 +30,42 @@ def _props(entity):
     )
 
 
+def _as_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value, default=1.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _alias_list(value):
+    """别名统一成列表：兼容 Neo4j 的字符串数组与早期用 | 分隔的字符串。"""
+    if not value:
+        return []
+    if isinstance(value, str):
+        text = value.replace("，", "|").replace(",", "|").replace("、", "|")
+        return [a for a in text.split("|") if a]
+    return list(value)
+
+
 def node_to_dict(node):
     """Neo4j Node -> 前端节点。id 用业务标识（人物名），不用数据库内部编号。"""
     props = _props(node)
     name = props.get("name", "")
-    faction = props.get("faction", "群雄")
+    faction = props.get("faction") or "群雄"
     return {
         "id": name,
         "label": name,
         "category": faction,
-        "value": int(props.get("value", 0) or 0),
+        "value": _as_int(props.get("value", 0), 0),
         "role": props.get("role", ""),
-        "aliases": props.get("aliases", []),
+        "aliases": _alias_list(props.get("aliases")),
     }
 
 
@@ -53,14 +77,27 @@ def rel_to_dict(rel, source_name, target_name, direction="out"):
         "source": source_name,
         "target": target_name,
         "label": props.get("type", ""),
-        "value": int(props.get("weight", 1) or 1),
+        "value": _as_int(props.get("weight", 1), 1) or 1,
         "evidence": props.get("evidence", ""),
-        "confidence": float(props.get("confidence", 1.0) or 1.0),
+        "confidence": _as_float(props.get("confidence", 1.0), 1.0),
     }
 
 
 def graph_payload(nodes, links, categories=None):
-    """统一出图结构：nodes / links / categories。"""
+    """统一出图结构：nodes / links / categories。
+
+    node.value 统一按“子图内关系数（度）”补全，前端用它控制节点大小。
+    查询层没有返回 value 时，不能留 0——否则所有节点会被画成同样大小，
+    文档示例里的 value=12 也就无从谈起。已有 value 的节点保持原值。
+    """
+    degrees = {}
+    for link in links:
+        degrees[link.get("source")] = degrees.get(link.get("source"), 0) + 1
+        degrees[link.get("target")] = degrees.get(link.get("target"), 0) + 1
+    for node in nodes:
+        if not node.get("value"):
+            node["value"] = degrees.get(node.get("id"), 0) or 1
+
     if categories is None:
         seen = []
         for node in nodes:
@@ -74,12 +111,9 @@ def graph_payload(nodes, links, categories=None):
 def person_to_dict(node):
     """人物详情：属性平铺，别名转列表。"""
     props = _props(node)
-    aliases = props.get("aliases") or []
-    if isinstance(aliases, str):
-        aliases = [a for a in aliases.replace("，", "|").split("|") if a]
     return {
         "name": props.get("name", ""),
-        "aliases": list(aliases),
+        "aliases": _alias_list(props.get("aliases")),
         "faction": props.get("faction", ""),
         "role": props.get("role", ""),
         "gender": props.get("gender", ""),
