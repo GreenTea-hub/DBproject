@@ -1,16 +1,21 @@
 """数据入库。负责人：P2。
 
-流程：建约束索引 -> 导入 Faction/Person -> 导入 Chapter/Event/Place
-      -> 导入 RELATED_TO / PARTICIPATED_IN / OCCURRED_AT / IN_CHAPTER / BELONGS_TO
-      -> 打印节点与关系数量核对。
+流程：建约束索引 -> 导入 Faction -> Chapter -> Person -> RELATED_TO
+      -> Event / Place / PARTICIPATED_IN / OCCURRED_AT / IN_CHAPTER -> APPEARS_IN
+      -> 与 CSV 行数逐项对账。
 
 用法：
     python scripts/import_graph.py              # 全量导入（可重复执行，MERGE 保证幂等）
     python scripts/import_graph.py --schema     # 只建约束与索引
     python scripts/import_graph.py --check      # 只做入库后的数量核对
 
-数据来源：data/persons.csv、factions.csv、relations.csv、events.csv
-（列定义见 data/README.md，格式由 P1 与 P2 在第 9 周共同定死）
+数据来源：data/factions.csv、persons.csv、relations.csv、events.csv
+          （列定义见 data/README.md，格式由 P1 与 P2 在第 9 周共同定死）
+可选来源：data/build/chapters.csv（回目与标题）、data/build/mentions.csv（人物出现回目），
+          均由 P1 的 scripts/split_chapters.py 与 scripts/extract_mentions.py 生成。
+          缺失时不影响导入，但 Chapter 只有事件涉及的几十回、且标题为空。
+
+退出码：0 正常；1 数据不一致或对账未通过（便于 CI / build_graph.py 判断）
 """
 
 import argparse
@@ -29,6 +34,7 @@ if str(ROOT) not in sys.path:  # 让脚本在任意目录执行时都能 import 
 from utils.validators import RELATION_TYPES  # noqa: E402
 
 DATA = ROOT / "data"
+BUILD = DATA / "build"
 SCHEMA = ROOT / "graph" / "schema.cypher"
 
 BATCH = 500
@@ -263,11 +269,14 @@ def load_events(session, rows, valid_persons):
         events.append({
             "name": r["name"],
             "year": to_int(r.get("year")),
-            "chapter": chapter_no,
+            "chapter": to_int(r.get("chapter")),
             "result": r.get("result") or "",
             "place": r.get("place") or "",
             "participants": participants,
         })
+    if missing:
+        sys.exit("[错误] events.csv 的参与者不在词典中（先跑 extract_mentions.py --validate）：\n  "
+                 + "\n  ".join(missing[:10]))
 
     if bad_chapter:
         print(f"[警告] {bad_chapter} 个事件的回目号不在 1—120 内，请核对 events.csv")
@@ -304,17 +313,18 @@ def load_events(session, rows, valid_persons):
 
 
 def load_appears_in(session):
-    """APPEARS_IN：可选，读取 P1 产出的 data/build/mentions.csv（回目,人物,次数）。"""
-    path = DATA / "build" / "mentions.csv"
+    """APPEARS_IN：读取 P1 产出的 data/build/mentions.csv（回目,人物,次数）。"""
+    path = BUILD / "mentions.csv"
     if not path.exists():
-        print("[appears_in] 跳过（未找到 data/build/mentions.csv）")
-        return
+        print("[appears_in] 跳过（未找到 data/build/mentions.csv，先跑 extract_mentions.py）")
+        return 0
     with path.open(encoding="utf-8-sig", newline="") as f:
         rows = [{
             "chapter": to_int(r.get("chapter")),
             "person": (r.get("person") or "").strip(),
             "count": to_int(r.get("count"), 0),
         } for r in csv.DictReader(f)]
+    rows = [r for r in rows if r["chapter"] is not None and r["person"]]
 
     for chunk in batched(rows):
         session.run(
@@ -328,6 +338,7 @@ def load_appears_in(session):
             rows=chunk,
         ).consume()
     print(f"[appears_in] {len(rows)} 条出现记录")
+    return len(rows)
 
 
 # ---------------------------------------------------------------- 核对
@@ -390,17 +401,24 @@ def main():
     args = parser.parse_args()
 
     driver = driver_from_env()
+    exit_code = 0
     try:
         with driver.session() as session:
             session.run("RETURN 1").consume()
             print("[连接] Neo4j OK")
 
             if args.check:
-                check(session)
-                return
+                return 0 if check(session) else 1
+
             if args.schema:
                 apply_schema(session)
-                return
+                return 0
+
+            factions = read_csv("factions.csv")
+            persons = read_csv("persons.csv")
+            relations = read_csv("relations.csv")
+            events = read_csv("events.csv")
+            known = {p["name"] for p in persons}
 
             apply_schema(session)
             factions = read_csv("factions.csv")
@@ -414,7 +432,8 @@ def main():
             check(session)
     finally:
         driver.close()
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

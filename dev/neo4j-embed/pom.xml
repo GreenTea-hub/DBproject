@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  无安装版 Neo4j（内嵌服务器）。
+
+  用途：组内有人没装 Neo4j、或答辩机器上不允许装服务时，
+  用官方 neo4j-harness 起一个真实的 Neo4j 5.26 内核，
+  监听标准的 bolt://127.0.0.1:7687 与 http://127.0.0.1:7474，
+  scripts/import_graph.py 与 Flask 应用都无需改动。
+
+  前置：JDK 17+、Maven 3.6+
+  启动：mvn -q compile exec:java
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>local.sanguo</groupId>
+  <artifactId>neo4j-embed</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <name>neo4j-embed</name>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <neo4j.version>5.26.0</neo4j.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.neo4j.test</groupId>
+      <artifactId>neo4j-harness</artifactId>
+      <version>${neo4j.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <configuration>
+          <mainClass>local.sanguo.EmbedServer</mainClass>
+          <cleanupDaemonThreads>false</cleanupDaemonThreads>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -29,3 +29,14 @@
 ### 4. 页面能打开，关系图空白
 - 原因：`static/vendor/echarts.min.js` 没放，且答辩环境无外网导致 CDN 也加载不到。
 - 解决：提前把 ECharts 下载进 `static/vendor/`（见该目录 README），断网彩排一次。
+
+### 5. 官网下载 Neo4j 返回 403（CloudFront "block access from your country"）
+- 现象：`https://dist.neo4j.org/neo4j-community-5.26.0-unix.tar.gz` 直接 403，
+  页面正文是 `The Amazon CloudFront distribution is configured to block access from your country`。
+  换 `neo4j.com/artifact.php` 同样 403，换 http/ssh 端口也没用。
+- 原因：Neo4j 的下载走 CloudFront，对部分地区整段拒绝，不是网络慢，也不是代理配置错。
+- 解决：三条路，按可用性排序——
+  1. 让有条件的同学/实验室机器下好 zip，走群共享目录分发（最稳，答辩前一周就做）；
+  2. 用仓库里的 `dev/neo4j-embed`（官方 `neo4j-harness`，真内核 + 标准 Bolt，无需安装）；
+  3. 从 Maven 镜像的 `org.neo4j` 构件自行拼装——不推荐，费时且容易漏包。
+- 提醒：`dev/neo4j-embed` 只用于开发和验证，第 15 周的正式部署仍要用官方安装包。

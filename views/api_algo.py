@@ -29,6 +29,10 @@ def shortest_path():
         return fail(400, "mode 只能是 shortest 或 weighted")
 
     data = query.shortest_path(source, target, mode)
+    if data.get("missing"):
+        return fail(404, "人物不存在")
+    if data.get("ambiguous"):
+        return fail(400, "人物名不唯一")
     if not data.get("nodes"):
         return fail(404, "两人之间不存在路径")
     return ok(data)
@@ -40,14 +44,12 @@ def pagerank():
         limit = to_int(request.args.get("limit"), 10, 1, 100, field="limit")
     except ParamError as exc:
         return fail(400, str(exc))
-    items = query.pagerank(limit)
-    return ok({"items": items})
+    return ok(query.pagerank(limit))
 
 
 @bp.get("/stats/communities")
 def communities():
-    items = query.communities()
-    return ok({"items": items})
+    return ok(query.communities())
 
 
 @bp.get("/stats/smallworld")

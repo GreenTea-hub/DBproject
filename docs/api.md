@@ -27,7 +27,7 @@
 |---|---|---|---|
 | GET | `/api/health` | P3 | 健康检查，返回 `{service, db, mock}` |
 | GET | `/api/persons?q=&faction=&page=&size=` | P3 | 人物搜索与分页（q 同时匹配姓名与别名） |
-| GET | `/api/persons/<name>` | P3 | 人物详情（含 relation_count、chapter_count） |
+| GET | `/api/persons/<name>` | P3 | 人物详情（含 relation_count、chapter_count＝出场回目数） |
 | GET | `/api/persons/<name>/graph?depth=&types=` | P3 | 人物子图，返回出图结构 |
 | GET | `/api/persons/<name>/relations` | P3 | 一跳关系列表 |
 | GET | `/api/events?year_from=&year_to=` | P2 | 事件列表 |
@@ -68,6 +68,24 @@
 - `id` 用人物名，不用数据库内部编号（重建库后编号会变，前端选中状态会错乱）；
 - `category` 直接用中文阵营值，前端配色表 `static/js/graph.js` 与之对应。
 
+关系列表 `/api/persons/<name>/relations` 的每一项：
+
+```json
+{
+  "source": "刘备", "target": "关羽",
+  "label": "兄弟", "value": 98,
+  "evidence": "第1回 宴桃园豪杰三结义（桃园结为兄弟）",
+  "confidence": 0.98
+}
+```
+
+- `label` 是关系类型（君臣/亲族/兄弟/同僚/敌对/师徒），`value` 是 1—100 的权重；
+- 占位模式（`MOCK_DATA=1`）返回结构与此完全一致，前端不需要分支处理。
+
+> 实现注意：Cypher 里取关系属性要用 `properties(r)`，不要直接 `RETURN r`。
+> `run_query` 走驱动的 `Record.data()`，neo4j 5.x 会把关系变量压成
+> `(起点属性, 类型, 终点属性)` 三元组，接口层再 `dict()` 就 500。
+
 ## 5. 示例
 
 ```
@@ -93,4 +111,5 @@ GET /api/persons/%E5%88%98%E5%A4%87/graph?depth=2&types=%E5%85%84%E5%BC%9F
 
 | 日期 | 变更 | 提出人 | 影响接口 |
 |---|---|---|---|
+| 2026-11-26 | 修复 `/relations` 返回 500；明确关系项字段与 `chapter_count` 口径（出场回目数） | P1 | `/api/persons/<name>/relations`、`/api/persons/<name>` |
 | 待填 | 初始冻结版本 v1.0 | P3 | 全部 |
