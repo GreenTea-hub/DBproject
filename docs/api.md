@@ -23,37 +23,51 @@
 
 ## 2. 接口清单
 
-| 方法 | 路径 | 提供者 | 说明 |
-|---|---|---|---|
-| GET | `/api/health` | P3 | 健康检查，返回 `{service, db, mock}` |
-| GET | `/api/persons?q=&faction=&page=&size=` | P3 | 人物搜索与分页（q 同时匹配姓名与别名） |
-| GET | `/api/persons/<name>` | P3 | 人物详情（含 relation_count、chapter_count＝出场回目数） |
-| GET | `/api/persons/<name>/graph?depth=&types=` | P3 | 人物子图，返回出图结构 |
-| GET | `/api/persons/<name>/relations` | P3 | 一跳关系列表 |
-| GET | `/api/events?year_from=&year_to=` | P2 | 事件列表 |
-| GET | `/api/events/<name>` | P2 | 事件详情（含参与者与地点） |
-| GET | `/api/timeline/<name>` | P2 | 人物生平时间线 |
-| POST | `/api/persons` | P2 | 新增人物 |
-| PUT | `/api/persons/<name>` | P2 | 修改人物（白名单字段） |
-| DELETE | `/api/persons/<name>` | P2 | 删除人物（DETACH DELETE） |
-| POST | `/api/relations` | P2 | 新增关系 |
-| DELETE | `/api/relations` | P2 | 删除关系（JSON 体传 source/target/type） |
-| POST | `/api/persons/merge` | P2 | 合并重复人物（keep / drop） |
-| GET | `/api/path?from=&to=&mode=` | P4 | 最短路，mode=shortest / weighted |
-| GET | `/api/stats/pagerank?limit=` | P4 | 影响力排名 |
-| GET | `/api/stats/communities` | P4 | 阵营社区发现 |
-| GET | `/api/stats/smallworld?sample=` | P4 | 小世界验证 |
+| 方法   | 路径                                        | 提供者 | 说明                                                     |
+| ------ | ------------------------------------------- | ------ | -------------------------------------------------------- |
+| GET    | `/api/health`                             | P3     | 健康检查，返回 `{service, db, mock}`；数据库不通时 `db=false` |
+| GET    | `/api/persons?q=&faction=&page=&size=`    | P3     | 人物搜索与分页（q 同时匹配姓名与别名）                   |
+| GET    | `/api/persons/<name>`                     | P3     | 人物详情（含 relation_count＝关系条数、chapter_count＝出场回目数）；name 为精确姓名 |
+| GET    | `/api/persons/<name>/graph?depth=&types=` | P3     | 人物子图，返回出图结构；types 在路径匹配阶段过滤         |
+| GET    | `/api/persons/<name>/relations`           | P3     | 一跳关系列表；人物不存在返回 404                         |
+| GET    | `/api/events?year_from=&year_to=`         | P2     | 事件列表                                                 |
+| GET    | `/api/events/<name>`                      | P2     | 事件详情（含参与者与地点）                               |
+| GET    | `/api/timeline/<name>`                    | P2     | 人物生平时间线                                           |
+| POST   | `/api/persons`                            | P2     | 新增人物                                                 |
+| PUT    | `/api/persons/<name>`                     | P2     | 修改人物（白名单字段）                                   |
+| DELETE | `/api/persons/<name>`                     | P2     | 删除人物（DETACH DELETE）                                |
+| POST   | `/api/relations`                          | P2     | 新增关系                                                 |
+| DELETE | `/api/relations`                          | P2     | 删除关系（JSON 体传 source/target/type）                 |
+| POST   | `/api/persons/merge`                      | P2     | 合并重复人物（keep / drop）                              |
+| GET    | `/api/path?from=&to=&mode=`               | P4     | 最短路，mode=shortest / weighted                         |
+| GET    | `/api/stats/pagerank?limit=`              | P4     | 影响力排名                                               |
+| GET    | `/api/stats/communities`                  | P4     | 阵营社区发现                                             |
+| GET    | `/api/stats/smallworld?sample=`           | P4     | 小世界验证                                               |
 
 ## 3. 参数约束
 
-| 参数 | 约束 | 越界处理 |
+| 参数      | 约束                                           | 越界处理                             |
+| --------- | ---------------------------------------------- | ------------------------------------ |
+| q         | 空串表示不过滤；同时匹配姓名与别名             | 超长按普通字符串处理                 |
+| faction   | 魏 / 蜀 / 吴 / 群雄，空串表示不过滤            | 非法值返回 400                       |
+| page      | ≥ 1，默认 1                                    | 非整数返回 400；小于 1 按 1；超出数据范围返回空页 |
+| size      | 1—100，默认 20                                | 非整数返回 400；超过 100 截断为 100  |
+| depth     | 1—3，默认 1                                    | 非整数返回 400；越界截断到区间内     |
+| types     | 逗号分隔，取值限 君臣/兄弟/敌对/亲族/师徒/同僚 | 非法值忽略；全部非法等价于不过滤     |
+| mode      | shortest / weighted                            | 其余返回 400                         |
+| from / to | 必须是已存在的人物名                           | 不存在返回 404「两人之间不存在路径」 |
+
+> `name` 只接受**精确姓名**（与 Neo4j 的 `Person.name` 唯一约束一致）。
+> 别名检索是搜索参数 `q` 的能力：`/api/persons?q=玄德` 命中刘备，
+> `/api/persons/玄德` 返回 404。不要在详情、关系、管理接口里传别名。
+
+### 错误码
+
+| HTTP | body.code | 场景 |
 |---|---|---|
-| page | ≥ 1 | 小于 1 时按 1 处理 |
-| size | 1—100，默认 20 | 超过 100 截断为 100 |
-| depth | 1—3，默认 1 | 截断到区间内 |
-| types | 逗号分隔，取值限 君臣/兄弟/敌对/亲族/师徒/同僚 | 非法值忽略 |
-| mode | shortest / weighted | 其余返回 400 |
-| from / to | 必须是已存在的人物名 | 不存在返回 404「两人之间不存在路径」 |
+| 400 | 400 | 参数类型错误、页码/深度非法、faction 不在枚举内 |
+| 404 | 404 | 人物不存在、事件不存在、两人之间不存在路径 |
+| 500 | 500 | 未捕获异常；服务端日志有堆栈，响应不暴露内部细节 |
 
 ## 4. 出图结构（所有画图接口必须一致）
 
@@ -61,12 +75,16 @@
 {
   "nodes": [{ "id": "刘备", "label": "刘备", "category": "蜀", "value": 12 }],
   "links": [{ "source": "刘备", "target": "关羽", "label": "兄弟", "value": 9 }],
-  "categories": [{ "name": "魏" }, { "name": "蜀" }, { "name": "吴" }, { "name": "群雄" }]
+  "categories": [{ "name": "蜀" }]
 }
 ```
 
 - `id` 用人物名，不用数据库内部编号（重建库后编号会变，前端选中状态会错乱）；
-- `category` 直接用中文阵营值，前端配色表 `static/js/graph.js` 与之对应。
+- `category` 直接用中文阵营值，前端配色表 `static/js/graph.js` 与之对应；
+- `value` 为节点在当前子图中的关系数（度），由 `graph_payload()` 统一补全，前端用它控制节点大小；
+- `links` 按“起点 + 终点 + 关系类型”去重，同一条边不会因为多层遍历重复出现；
+- `types` 在路径匹配阶段生效：只保留完全由允许类型构成的路径，不会留下靠其他类型才连上的孤立节点；
+- `categories` 只列出当前子图实际出现的阵营，顺序按节点首次出现，不保证固定为四个。
 
 关系列表 `/api/persons/<name>/relations` 的每一项：
 
@@ -80,11 +98,17 @@
 ```
 
 - `label` 是关系类型（君臣/亲族/兄弟/同僚/敌对/师徒），`value` 是 1—100 的权重；
-- 占位模式（`MOCK_DATA=1`）返回结构与此完全一致，前端不需要分支处理。
+- `relation_count` 按**关系条数**统计，与 `/relations` 返回的 `items` 长度一致；
+  同一对人物存在多种关系类型时不会被合并成一条；
+- 占位模式（`MOCK_DATA=1`）返回结构与此完全一致，前端不需要分支处理；
+- 占位模式的 `chapter_count` 只统计 mock 事件覆盖的回目，用于让字段非零、结构可联调，
+  数值不代表真实 120 回的出场回目数；接库后以 `APPEARS_IN` 计数为准。
 
-> 实现注意：Cypher 里取关系属性要用 `properties(r)`，不要直接 `RETURN r`。
-> `run_query` 走驱动的 `Record.data()`，neo4j 5.x 会把关系变量压成
-> `(起点属性, 类型, 终点属性)` 三元组，接口层再 `dict()` 就 500。
+> 实现注意：`list_relations` 显式用 `properties(r)` 摊平关系属性，并用
+> `startNode(r)` / `endNode(r)` 取端点。`run_query` 使用 `dict(record)` 保留
+> Node / Relationship 原始对象，不能用 `Record.data()`——neo4j 5.x 的 `data()`
+> 会把关系压成 `(起点属性, 类型, 终点属性)` 三元组，关系属性丢失，接口层
+> 再 `dict()` 就会 500。
 
 ## 5. 示例
 
@@ -107,9 +131,24 @@ GET /api/persons/%E5%88%98%E5%A4%87/graph?depth=2&types=%E5%85%84%E5%BC%9F
 }
 ```
 
+别名搜索：
+
+```
+GET /api/persons?q=%E7%8E%84%E5%BE%B7
+```
+
+返回 `data.items` 中 `name=刘备`，`total=1`；但再用 `GET /api/persons/玄德`
+会得到 404，因为详情接口只认精确姓名。
+
+```json
+{ "code": 404, "message": "人物不存在" }
+```
+
 ## 6. 变更记录
 
-| 日期 | 变更 | 提出人 | 影响接口 |
-|---|---|---|---|
-| 2026-11-26 | 修复 `/relations` 返回 500；明确关系项字段与 `chapter_count` 口径（出场回目数） | P1 | `/api/persons/<name>/relations`、`/api/persons/<name>` |
-| 待填 | 初始冻结版本 v1.0 | P3 | 全部 |
+| 日期       | 变更                                                                                | 提出人 | 影响接口                                                   |
+| ---------- | ----------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------- |
+| 2026-11-26 | 初始冻结版本 v1.0：统一响应、出图结构、参数约束                                      | P3     | 全部                                                       |
+| 2026-11-26 | 修复 `/relations` 返回 500；明确关系项字段与 `chapter_count` 口径（出场回目数） | P1     | `/api/persons/<name>/relations`、`/api/persons/<name>` |
+| 2026-11-28 | 明确 `name` 只接受精确姓名、别名只用于 `q`；`/relations` 人物不存在改 404；`faction` 非法返回 400；子图 `types` 改为路径级过滤并补全节点 `value`（度） | P3     | `/api/persons`、`/api/persons/<name>`、`/api/persons/<name>/relations`、`/api/persons/<name>/graph` |
+| 2026-11-28 | 修复 Issue #3：`run_query` 改 `dict(record)` 保留 Relationship 原始对象，真库 `/relations` 不再 500；mock 合并按对象身份删除 drop，不再误删保留者；冒烟覆盖关系接口 | P3     | `/api/persons/<name>/relations`、`/api/persons/merge`（mock 模式） |

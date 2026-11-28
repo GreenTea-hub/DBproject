@@ -50,3 +50,17 @@ def clean_relation_types(raw):
         return []
     parts = [p.strip() for p in str(raw).replace("，", ",").split(",")]
     return [p for p in parts if p in RELATION_TYPES]
+
+
+def clean_faction(raw):
+    """阵营过滤只接受四个枚举值；空值表示不过滤。
+
+    与 types 的“非法值忽略”不同，faction 传错通常意味着前端选项或调用方
+    拼写有问题，直接 400 比静默返回空列表更容易定位。
+    """
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if value not in FACTIONS:
+        raise ParamError("faction 只能是：" + "、".join(FACTIONS))
+    return value

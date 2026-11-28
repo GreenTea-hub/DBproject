@@ -7,6 +7,7 @@
 """
 
 import logging
+import threading
 
 from flask import current_app, g, has_app_context
 
@@ -18,30 +19,38 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 _driver = None
+_driver_lock = threading.Lock()
 
 
 def get_driver():
-    """全局唯一的 Driver，首次调用时创建。"""
+    """全局唯一的 Driver，首次调用时创建。
+
+    Flask 开发服务器是多线程的，两个请求可能同时触发首次连接；
+    加锁 + 二次判空，避免创建出两个连接池。
+    """
     global _driver
     if _driver is not None:
         return _driver
     if GraphDatabase is None:
         raise RuntimeError("未安装 neo4j 驱动，请先 pip install -r requirements.txt")
 
-    cfg = current_app.config
-    _driver = GraphDatabase.driver(
-        cfg["NEO4J_URI"],
-        auth=(cfg["NEO4J_USER"], cfg["NEO4J_PASSWORD"]),
-        max_connection_pool_size=50,
-    )
-    logger.info("Neo4j driver 已创建：%s", cfg["NEO4J_URI"])
+    with _driver_lock:
+        if _driver is None:
+            cfg = current_app.config
+            _driver = GraphDatabase.driver(
+                cfg["NEO4J_URI"],
+                auth=(cfg["NEO4J_USER"], cfg["NEO4J_PASSWORD"]),
+                max_connection_pool_size=50,
+                connection_timeout=5,
+            )
+            logger.info("Neo4j driver 已创建：%s", cfg["NEO4J_URI"])
     return _driver
 
 
 def get_session():
     """一个请求一个会话，存在 flask.g 上，请求结束由 close_session 关闭。"""
     if not has_app_context():
-        return get_driver().session()
+        raise RuntimeError("数据库会话必须在 Flask 应用上下文中创建")
     if "neo4j_session" not in g:
         g.neo4j_session = get_driver().session()
     return g.neo4j_session
@@ -57,9 +66,16 @@ def close_session(exc=None):
 
 
 def run_query(cypher, **params):
-    """执行只读查询，返回 list[dict]。写入类请用 run_write。"""
+    """执行只读查询，返回 list[dict]。
+
+    这里用 dict(record) 而不是 record.data()：neo4j 5.x 的 data() 会把
+    Relationship 压成 (起点属性, 类型, 终点属性) 三元组，关系属性全部丢失，
+    接口层再 dict() 就 500。保留 Node / Relationship 原始对象后，
+    utils.serialize._props() 可以通过 .items() 正常读取属性。
+    写入类请用 run_write。
+    """
     result = get_session().run(cypher, **params)
-    return [record.data() for record in result]
+    return [dict(record) for record in result]
 
 
 def run_write(cypher, **params):
@@ -88,6 +104,7 @@ def ping():
 
 def close_driver():
     global _driver
-    if _driver is not None:
-        _driver.close()
-        _driver = None
+    with _driver_lock:
+        if _driver is not None:
+            _driver.close()
+            _driver = None

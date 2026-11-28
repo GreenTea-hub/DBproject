@@ -48,10 +48,23 @@ def home():
     assert resp.status_code == 200, f"HTTP {resp.status_code}"
 
 
+@check("健康检查接口", "P3")
+def health():
+    data = assert_envelope(get_json("/api/health"), "service", "db", "mock")
+    assert data["service"] == "sanguo-graph", f"service 异常：{data['service']}"
+
+
 @check("人物搜索接口", "P3")
 def search_persons():
     data = assert_envelope(get_json("/api/persons", q="刘", size=5), "items", "total")
     assert isinstance(data["items"], list), "items 不是列表"
+
+
+@check("非法 faction 返回 400", "P3")
+def invalid_faction():
+    resp = get_json("/api/persons", faction="不存在的阵营")
+    assert resp.status_code == 400, f"HTTP {resp.status_code}，应返回 400"
+    assert resp.json().get("code") == 400, "错误信封 code 不是 400"
 
 
 @check("人物详情接口", "P3")
@@ -74,6 +87,15 @@ def person_relations():
     for key in ("source", "target", "label", "value"):
         assert key in first, f"关系项缺少字段 {key}"
     assert first["value"] >= 1, f"权重异常：{first['value']}"
+
+
+@check("不存在的人物返回 404", "P3")
+def person_not_found():
+    for path in ("/api/persons/冒烟不存在", "/api/persons/冒烟不存在/relations",
+                 "/api/persons/冒烟不存在/graph"):
+        resp = get_json(path)
+        assert resp.status_code == 404, f"{path} 返回 HTTP {resp.status_code}，应返回 404"
+        assert resp.json().get("code") == 404, f"{path} 错误信封 code 不是 404"
 
 
 @check("事件列表接口", "P2")

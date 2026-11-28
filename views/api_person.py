@@ -10,7 +10,14 @@ from flask import Blueprint, current_app, request
 
 from graph import queries_person as query
 from utils.response import fail, ok, ok_page
-from utils.validators import ParamError, clean_name, clean_relation_types, parse_page, to_int
+from utils.validators import (
+    ParamError,
+    clean_faction,
+    clean_name,
+    clean_relation_types,
+    parse_page,
+    to_int,
+)
 
 bp = Blueprint("person", __name__, url_prefix="/api/persons")
 
@@ -23,12 +30,13 @@ def list_persons():
             default_size=current_app.config["DEFAULT_PAGE_SIZE"],
             max_size=current_app.config["MAX_PAGE_SIZE"],
         )
+        faction = clean_faction(request.args.get("faction"))
     except ParamError as exc:
         return fail(400, str(exc))
 
     items, total = query.search_persons(
         q=request.args.get("q", "").strip(),
-        faction=request.args.get("faction", "").strip(),
+        faction=faction,
         page=page,
         size=size,
     )
@@ -54,7 +62,11 @@ def person_relations(name):
         name = clean_name(name)
     except ParamError as exc:
         return fail(400, str(exc))
-    return ok({"items": query.list_relations(name)})
+
+    items = query.list_relations(name)
+    if items is None:
+        return fail(404, "人物不存在")
+    return ok({"items": items})
 
 
 @bp.get("/<name>/graph")

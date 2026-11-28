@@ -5,7 +5,7 @@
 禁止把这里的样例数据当作最终数据——真实数据由 P1 产出、P2 导入。
 """
 
-from utils.serialize import graph_payload, node_to_dict, rel_to_dict
+from utils.serialize import graph_payload, node_to_dict
 
 PERSONS = [
     {"name": "刘备", "aliases": ["玄德", "刘皇叔", "先主"], "faction": "蜀", "role": "君主", "gender": "男", "birth_year": 161, "death_year": 223},
@@ -39,14 +39,21 @@ EVENTS = [
 
 
 def _find(name):
+    """按姓名精确查找。
+
+    别名只用于搜索（q 参数），详情、关系、管理写操作都按姓名定位：
+    真实库的 MATCH 也是 name 精确匹配，mock 必须保持一致，否则会出现
+    “mock 能查别名、接库查不到”的契约裂缝；管理接口更不能按别名命中，
+    否则新增“玄德”会误改成刘备。
+    """
     for p in PERSONS:
-        if p["name"] == name or name in p["aliases"]:
+        if p["name"] == name:
             return p
     return None
 
 
 def search(q="", faction="", page=1, size=20):
-    rows = PERSONS
+    rows = sorted(PERSONS, key=lambda p: p["name"])
     if faction:
         rows = [p for p in rows if p["faction"] == faction]
     if q:
@@ -63,9 +70,24 @@ def detail(name):
     return _find(name)
 
 
+def chapter_count(name):
+    """占位模式下可解释的“出场回目数”：统计 mock 事件覆盖的不同回目。
+
+    真实库用 APPEARS_IN 边计数；这里没有 120 回全文，只保证字段口径一致，
+    不能拿它和真实数据比较大小。
+    """
+    return len({e["chapter"] for e in EVENTS if name in e["participants"]})
+
+
 def relations(name):
-    """人物的一跳关系。字段与真实接口保持一致（label / value），
-    否则占位模式与接库模式的返回结构不同，前端和冒烟脚本会被骗过。"""
+    """人物的一跳关系。人物不存在返回 None，由接口层转成 404。
+
+    字段与真实接口保持一致（label / value），否则占位模式与接库模式的
+    返回结构不同，前端和冒烟脚本会被骗过。
+    """
+    person = _find(name)
+    if person is None:
+        return None
     return [
         {
             "source": r["source"],
@@ -76,7 +98,7 @@ def relations(name):
             "confidence": r.get("confidence", 1.0),
         }
         for r in RELATIONS
-        if name in (r["source"], r["target"])
+        if person["name"] in (r["source"], r["target"])
     ]
 
 
@@ -89,12 +111,13 @@ def subgraph(name, depth=1, types=None):
     keep_types = set(types or [])
     nodes = {center["name"]: node_to_dict(_Node(center))}
     links = []
+    seen_links = set()
     frontier = [center["name"]]
 
-    for _ in range(max(1, min(depth, 3))):
+    for _ in range(max(1, min(int(depth or 1), 3))):
         next_frontier = []
         for current in frontier:
-            for rel in relations(current):
+            for rel in relations(current) or []:
                 if keep_types and rel["label"] not in keep_types:
                     continue
                 other_name = rel["target"] if rel["source"] == current else rel["source"]
@@ -104,6 +127,12 @@ def subgraph(name, depth=1, types=None):
                 if other_name not in nodes:
                     nodes[other_name] = node_to_dict(_Node(other))
                     next_frontier.append(other_name)
+                # 同一条边会在不同层被重复遍历（刘备-关羽在第 1、2 层都会出现），
+                # 用无向端点 + 关系类型去重，避免前端画出多条重叠边。
+                key = (rel["source"], rel["target"], rel["label"])
+                if key in seen_links:
+                    continue
+                seen_links.add(key)
                 links.append({
                     "source": rel["source"],
                     "target": rel["target"],
@@ -118,11 +147,14 @@ def subgraph(name, depth=1, types=None):
 
 
 class _Node(dict):
-    """把 dict 包装成 serialize.node_to_dict 能吃的形状（模拟 Neo4j Node 的属性访问）。"""
+    """把 dict 包装成 serialize.node_to_dict 能吃的形状（模拟 Neo4j Node 的属性访问）。
+
+    value 不在这里写死：graph_payload 会按子图内的实际度数补全，
+    否则 mock 与真实库的节点大小会不一致。
+    """
 
     def __init__(self, data):
         super().__init__(data)
-        self["value"] = 1
 
 
 def pagerank(limit=10):
@@ -139,7 +171,9 @@ def communities():
 
 def shortest_path(source, target, mode="shortest"):
     if source == target:
-        return {"nodes": [source], "length": 0}
+        if _find(source) is None:
+            return {"nodes": [], "length": -1, "mode": mode}
+        return {"nodes": [source], "length": 0, "mode": mode}
     # 仅占位：真实实现由 P4 用 Cypher shortestPath 完成
     for rel in RELATIONS:
         pair = {rel["source"], rel["target"]}
@@ -176,17 +210,25 @@ def update_person(name, fields):
 
 
 def delete_person(name):
-    global PERSONS
     person = _find(name)
     if person is None:
         return {"deleted": 0, "mock": True}
-    PERSONS = [p for p in PERSONS if p["name"] != person["name"]]
+    # 原地修改，避免 global 重新绑定导致其他模块持有的 PERSONS 引用失效。
+    PERSONS[:] = [p for p in PERSONS if p is not person]
     RELATIONS[:] = [r for r in RELATIONS
                     if r["source"] != person["name"] and r["target"] != person["name"]]
     return {"name": person["name"], "deleted": 1, "mock": True}
 
 
 def create_relation(source, target, rel_type, weight=50, evidence="", confidence=0.5):
+    if _find(source) is None or _find(target) is None:
+        return {"source": source, "target": target, "created": False, "mock": True}
+    # 与真实库的无向 MERGE 保持一致：同一对人物、同一类型只保留一条边。
+    for rel in RELATIONS:
+        if {rel["source"], rel["target"]} == {source, target} and rel["type"] == rel_type:
+            # 只更新属性，保留已有边的存储方向，和 Neo4j 的无向 MERGE 一致。
+            rel.update({"weight": weight, "evidence": evidence, "confidence": confidence})
+            return {"source": source, "target": target, "created": True, "mock": True}
     RELATIONS.append({"source": source, "target": target, "type": rel_type,
                       "weight": weight, "evidence": evidence, "confidence": confidence})
     return {"source": source, "target": target, "created": True, "mock": True}
@@ -202,25 +244,64 @@ def delete_relation(source, target, rel_type=None):
 
 
 def merge_persons(keep, drop):
+    """把 drop 合并进 keep：别名并入、关系迁移、删除 drop。
+
+    不能先把 drop 的名字写进 keep.aliases 再调 delete_person()：
+    只要 delete_person 按别名匹配，就会把保留者删掉。这里按对象身份
+    删除 drop，并自己完成关系迁移，不依赖 delete_person。
+    """
     keep_person = _find(keep)
     drop_person = _find(drop)
     if keep_person is None or drop_person is None:
-        return {"keep": keep, "drop": drop, "deleted": 0, "mock": True}
-    keep_person["aliases"] = list(dict.fromkeys(
-        keep_person["aliases"] + [drop_person["name"]] + drop_person["aliases"]
-    ))
+        return {"keep": keep, "drop": drop, "deleted": 0,
+                "merged": False, "mock": True}
+    keep_name = keep_person["name"]
+    drop_name = drop_person["name"]
+    if keep_person is drop_person:
+        return {"keep": keep_name, "drop": drop_name, "merged": False, "mock": True}
+
+    # 先保留不涉及 drop 的关系，并把它们作为去重基线。
+    migrated = []
+    seen = set()
     for rel in RELATIONS:
-        if rel["source"] == drop_person["name"]:
-            rel["source"] = keep_person["name"]
-        if rel["target"] == drop_person["name"]:
-            rel["target"] = keep_person["name"]
-    delete_person(drop_person["name"])
-    return {"keep": keep_person["name"], "drop": drop, "merged": True, "mock": True}
+        if drop_name in (rel["source"], rel["target"]):
+            continue
+        migrated.append(rel)
+        seen.add((rel["source"], rel["target"], rel["type"]))
+
+    # 再迁移 drop 的关系：drop-keep 合并后是自环，直接丢弃；
+    # 与 keep 已有关系重复的（端点 + 类型相同）也跳过，避免 mock 出现重边。
+    for rel in RELATIONS:
+        if drop_name not in (rel["source"], rel["target"]):
+            continue
+        source = keep_name if rel["source"] == drop_name else rel["source"]
+        target = keep_name if rel["target"] == drop_name else rel["target"]
+        if source == target:
+            continue
+        key = (source, target, rel["type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        migrated.append({**rel, "source": source, "target": target})
+    RELATIONS[:] = migrated
+    # 事件参与关系也要迁移：DETACH 在真实库里会删掉 PARTICIPATED_IN，
+    # mock 里对应的是 EVENTS.participants 列表。
+    for event in EVENTS:
+        if drop_name in event.get("participants", []):
+            event["participants"] = list(dict.fromkeys(
+                keep_name if name == drop_name else name
+                for name in event["participants"]
+            ))
+    keep_person["aliases"] = list(dict.fromkeys(
+        keep_person["aliases"] + [drop_name] + drop_person["aliases"]
+    ))
+    PERSONS[:] = [p for p in PERSONS if p is not drop_person]
+    return {"keep": keep_name, "drop": drop_name, "merged": True, "mock": True}
 
 
 __all__ = [
-    "PERSONS", "RELATIONS", "EVENTS", "search", "detail",
-    "relations", "subgraph", "pagerank", "communities", "shortest_path",
-    "create_person", "update_person", "delete_person",
-    "create_relation", "delete_relation", "merge_persons",
+    "EVENTS", "PERSONS", "RELATIONS", "chapter_count", "communities",
+    "create_person", "create_relation", "delete_person", "delete_relation",
+    "detail", "merge_persons", "pagerank", "relations", "search",
+    "shortest_path", "subgraph", "update_person",
 ]
